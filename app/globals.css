@@ -1,0 +1,235 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --sky-0: #87d3ff;
+  --sky-1: #3aa6f2;
+  --sky-2: #1b7ed1;
+  --cloud: #f6fbff;
+  --shadow: #b6d8f2;
+  --accent: #ffd34d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background-color: var(--sky-0);
+  color: #0f172a;
+}
+
+body {
+  background-image: radial-gradient(1100px 640px at 15% 10%, rgba(255, 255, 255, 0.6), transparent 65%),
+    radial-gradient(1200px 680px at 85% 0%, rgba(255, 255, 255, 0.5), transparent 60%),
+    linear-gradient(180deg, var(--sky-1), var(--sky-0) 45%, #e0f2fe 100%);
+}
+
+::selection {
+  background: rgba(255, 211, 77, 0.6);
+}
+
+.cloud {
+  position: absolute;
+  background: var(--cloud);
+  border-radius: 999px;
+  box-shadow: 0 12px 0 -8px var(--shadow);
+}
+
+.cloud::before,
+.cloud::after {
+  content: '';
+  position: absolute;
+  background: var(--cloud);
+  border-radius: 999px;
+}
+
+.cloud::before {
+  width: 60%;
+  height: 60%;
+  left: 10%;
+  top: -25%;
+  box-shadow: 0 10px 0 -6px var(--shadow);
+}
+
+.cloud::after {
+  width: 55%;
+  height: 55%;
+  right: 8%;
+  top: -15%;
+  box-shadow: 0 10px 0 -6px var(--shadow);
+}
+
+.cloud-1 {
+  width: 320px;
+  height: 110px;
+  top: 10%;
+  left: 8%;
+}
+
+.cloud-2 {
+  width: 420px;
+  height: 130px;
+  top: 18%;
+  right: 10%;
+}
+
+.cloud-3 {
+  width: 260px;
+  height: 90px;
+  top: 40%;
+  left: 18%;
+}
+
+.cloud-4 {
+  width: 300px;
+  height: 95px;
+  top: 55%;
+  right: 18%;
+}
+
+.cloud-5 {
+  width: 200px;
+  height: 70px;
+  top: 70%;
+  left: 45%;
+}
+
+@media (max-width: 768px) {
+  .cloud-1,
+  .cloud-2,
+  .cloud-3,
+  .cloud-4,
+  .cloud-5 {
+    transform: scale(0.7);
+  }
+}
+
+.intro-cloud {
+  transition: transform 1.3s ease, opacity 1.3s ease;
+}
+
+.intro-init .cloud-left {
+  transform: translateX(120px);
+}
+
+.intro-init .cloud-right {
+  transform: translateX(-120px);
+}
+
+.intro-open .cloud-left,
+.intro-open .cloud-right {
+  transform: translateX(0);
+}
+
+.intro-exit .cloud-left {
+  transform: translateX(-140px);
+  opacity: 0.6;
+}
+
+.intro-exit .cloud-right {
+  transform: translateX(140px);
+  opacity: 0.6;
+}
+
+.intro-logo {
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.intro-logo-show {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.intro-logo-exit {
+  opacity: 0;
+  transform: scale(1.15);
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+
+.intro-button {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  pointer-events: none;
+}
+
+.intro-button-show {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.intro-button-hide {
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-cloud,
+  .intro-logo,
+  .intro-button {
+    transition: none;
+  }
+}
+
+.reportes-root {
+  background: radial-gradient(1200px 800px at 50% 0%, rgba(255, 255, 255, 0.6), transparent 60%),
+    linear-gradient(180deg, #7cc8ff 0%, #bfe6ff 35%, #eaf6ff 100%);
+}
+
+.reportes-card {
+  opacity: 0;
+  transform: scale(0.92);
+  animation: reportes-card-in 0.5s ease forwards;
+}
+
+.reportes-header {
+  opacity: 0;
+  transform: translateY(12px);
+  animation: reportes-header-in 0.5s ease forwards;
+}
+
+@keyframes reportes-header-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes reportes-card-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reportes-card {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .reportes-header {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
