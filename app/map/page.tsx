@@ -8,6 +8,8 @@ declare global {
   }
 }
 
+declare const google: any;
+
 const bacheTypes = [
   {
     name: 'Pequeña grieta',
