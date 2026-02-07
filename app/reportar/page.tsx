@@ -4,12 +4,13 @@ type SearchParams = {
   tipo?: string;
 };
 
-export default function ReportarPage({
+export default async function ReportarPage({
   searchParams,
 }: {
-  searchParams: SearchParams;
+  searchParams: Promise<SearchParams>;
 }) {
-  const tipo = searchParams.tipo ?? 'Bache';
+  const resolved = await searchParams;
+  const tipo = resolved?.tipo ?? 'Bache';
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900">
