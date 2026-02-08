@@ -40,15 +40,16 @@ export async function POST(request: Request) {
     const lat = Number(formData.get('lat'));
     const lng = Number(formData.get('lng'));
     const type = String(formData.get('type') ?? '');
+    const providedPhotoUrl = String(formData.get('photo_url') ?? '').trim();
     const photo = formData.get('photo') as File | null;
 
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || !type) {
       return NextResponse.json({ error: 'Invalid payload.' }, { status: 400 });
     }
 
-    let photoUrl: string | null = null;
+    let photoUrl: string | null = providedPhotoUrl || null;
 
-    if (photo && photo.size > 0) {
+    if (!photoUrl && photo && photo.size > 0) {
       if (photo.size > MAX_PHOTO_BYTES) {
         return NextResponse.json(
           { error: 'Photo too large.' },

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AudioControls from '../components/AudioControls';
+import { supabaseClient } from '../../lib/supabase/client';
 
 declare global {
   interface Window {
@@ -974,9 +975,49 @@ export default function MapClient() {
                       formData.append('lat', String(newPin.lat));
                       formData.append('lng', String(newPin.lng));
                       formData.append('type', activeType.name);
+
                       if (photoFile) {
-                        formData.append('photo', photoFile, photoFile.name);
+                        const uploadRes = await fetch('/api/uploads', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            filename: photoFile.name,
+                            contentType: photoFile.type,
+                            size: photoFile.size,
+                          }),
+                        });
+                        if (uploadRes.ok) {
+                          const uploadData = (await uploadRes.json()) as {
+                            bucket: string;
+                            path: string;
+                            signedUrl: string;
+                            publicUrl: string | null;
+                          };
+                          if (supabaseClient) {
+                            const { error: uploadError } =
+                              await supabaseClient.storage
+                                .from(uploadData.bucket)
+                                .uploadToSignedUrl(
+                                  uploadData.path,
+                                  uploadData.signedUrl,
+                                  photoFile,
+                                );
+                            if (uploadError) {
+                              alert('No se pudo subir la foto.');
+                              setIsSaving(false);
+                              return;
+                            }
+                          }
+                          if (uploadData.publicUrl) {
+                            formData.append('photo_url', uploadData.publicUrl);
+                          }
+                        } else {
+                          alert('No se pudo subir la foto.');
+                          setIsSaving(false);
+                          return;
+                        }
                       }
+
                       const res = await fetch('/api/reports', {
                         method: 'POST',
                         body: formData,
