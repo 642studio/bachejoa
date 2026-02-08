@@ -37,6 +37,7 @@ type ReportRecord = {
   type: string;
   photo_url: string | null;
   created_at: string;
+  angry_count: number | null;
 };
 
 const defaultCenter: LatLngLiteral = { lat: 27.0706, lng: -109.4437 };
@@ -206,10 +207,28 @@ export default function MapPage() {
     setPhotoFile(file);
   }
 
+  async function incrementAngryCount(
+    reportId: string,
+    countEl: HTMLSpanElement,
+  ) {
+    try {
+      const res = await fetch(`/api/reports/${reportId}/angry`, {
+        method: 'POST',
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { angry_count: number };
+      countEl.textContent = String(data.angry_count ?? 0);
+    } catch {
+      // ignore
+    }
+  }
+
   function buildInfoContent(
+    reportId: string,
     type: string,
     photoUrl: string | null,
     date: string,
+    angryCount: number | null,
   ) {
     const wrapper = document.createElement('div');
     wrapper.style.maxWidth = '220px';
@@ -228,6 +247,49 @@ export default function MapPage() {
 
     wrapper.appendChild(title);
     wrapper.appendChild(dateEl);
+
+    const reaction = document.createElement('div');
+    reaction.style.display = 'flex';
+    reaction.style.alignItems = 'center';
+    reaction.style.gap = '6px';
+    reaction.style.marginBottom = '10px';
+
+    const emoji = document.createElement('img');
+    emoji.src = '/angryface.png';
+    emoji.alt = 'Me enojas';
+    emoji.style.width = '20px';
+    emoji.style.height = '20px';
+
+    const count = document.createElement('span');
+    count.textContent = `${angryCount ?? 0}`;
+    count.style.fontSize = '12px';
+    count.style.color = '#1f2937';
+    count.style.fontWeight = '600';
+
+    const label = document.createElement('span');
+    label.textContent = 'Me enojas';
+    label.style.fontSize = '12px';
+    label.style.color = '#64748b';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.style.display = 'flex';
+    button.style.alignItems = 'center';
+    button.style.gap = '6px';
+    button.style.border = 'none';
+    button.style.background = 'transparent';
+    button.style.cursor = 'pointer';
+    button.style.padding = '0';
+
+    button.appendChild(emoji);
+    button.appendChild(count);
+    button.appendChild(label);
+    button.addEventListener('click', () =>
+      incrementAngryCount(reportId, count),
+    );
+
+    reaction.appendChild(button);
+    wrapper.appendChild(reaction);
 
     if (photoUrl) {
       const img = document.createElement('img');
@@ -276,9 +338,11 @@ export default function MapPage() {
         },
       );
       const content = buildInfoContent(
+        report.id,
         report.type,
         report.photo_url,
         reportDate,
+        report.angry_count,
       );
       infoWindowRef.current.setContent(content);
       infoWindowRef.current.open({
