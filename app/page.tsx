@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import AudioControls from './components/AudioControls';
 
 export default function Home() {
   const router = useRouter();
@@ -31,6 +32,7 @@ export default function Home() {
         phase === 'exit' ? 'intro-exit' : ''
       }`}
     >
+      <AudioControls src="/audio/songintro1.mp3" loop autoPlay />
       <div className="absolute inset-0">
         <img
           alt="Nube"
