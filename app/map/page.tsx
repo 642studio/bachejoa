@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AudioControls from '../components/AudioControls';
 
+export const dynamic = 'force-dynamic';
+
 declare global {
   interface Window {
     google: any;
