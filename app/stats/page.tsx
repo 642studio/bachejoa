@@ -10,6 +10,10 @@ type ReportRecord = {
   photo_url: string | null;
   created_at: string;
   angry_count: number | null;
+  repaired?: boolean | null;
+  repaired_at?: string | null;
+  repair_rating_avg?: number | null;
+  repair_rating_count?: number | null;
 };
 
 const bacheTypes = [
