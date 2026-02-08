@@ -41,8 +41,7 @@ export default function ReportesPage() {
               Tipos de reporte
             </h1>
             <p className="mt-2 max-w-xl text-sm text-slate-500">
-              Selecciona el tipo de bache para continuar al mapa y marcar el punto
-              exacto.
+              Conoce los tipos de reportes que puedes reportar.
             </p>
           </div>
           <a

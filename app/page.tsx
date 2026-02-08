@@ -90,6 +90,7 @@ export default function Home() {
           >
             Ingresar
           </button>
+          <p className="text-xs text-slate-700/80">pwd by 642</p>
         </div>
       </div>
     </main>

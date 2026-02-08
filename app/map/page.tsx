@@ -92,6 +92,7 @@ export default function MapPage() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoName, setPhotoName] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   const activeType = useMemo(
     () => bacheTypes.find((type) => type.name === selectedType),
@@ -128,6 +129,13 @@ export default function MapPage() {
       .catch(() => {
         setMapReady(false);
       });
+  }, []);
+
+  useEffect(() => {
+    const seen = window.localStorage.getItem('bachejoa_guide_seen');
+    if (!seen) {
+      setShowGuide(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -394,8 +402,58 @@ export default function MapPage() {
           >
             +
           </button>
+
+          <div className="absolute bottom-6 right-28 z-10 flex flex-col gap-3">
+            <button className="relative flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-[0_12px_22px_rgba(15,23,42,0.3)]">
+              <img alt="Avisos" className="h-7 w-7" src="/alert.png" />
+              <img
+                alt="Notificación"
+                className="absolute -right-1 -top-1 h-5 w-5"
+                src="/notif.png"
+              />
+            </button>
+            <button className="relative flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-[0_12px_22px_rgba(15,23,42,0.3)]">
+              <img
+                alt="Avisos del presidente"
+                className="h-8 w-8 rounded-full"
+                src="/presi-icon.png"
+              />
+              <img
+                alt="Notificación"
+                className="absolute -right-1 -top-1 h-5 w-5"
+                src="/notif.png"
+              />
+            </button>
+          </div>
         </div>
       </div>
+
+      {showGuide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4">
+          <div className="w-full max-w-md rounded-[28px] bg-white px-6 py-5 shadow-[0_24px_50px_rgba(15,23,42,0.35)]">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Cómo hacer tu reporte
+            </h2>
+            <ul className="mt-3 space-y-2 text-sm text-slate-600">
+              <li>Navega por el mapa.</li>
+              <li>Toca donde quieres hacer el reporte.</li>
+              <li>Escoge el tipo de reporte.</li>
+              <li>Adjunta foto (opcional).</li>
+              <li>Click en REPORTAR.</li>
+            </ul>
+            <button
+              className="mt-4 w-full rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+              onClick={() => {
+                window.localStorage.setItem('bachejoa_guide_seen', 'true');
+                setShowGuide(false);
+              }}
+              type="button"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
 
       {isDialogOpen && (
         <div className="fixed inset-x-0 bottom-4 z-50 flex justify-center px-4 sm:bottom-6">
