@@ -111,6 +111,11 @@ export default function MapClient() {
   const [guideStep, setGuideStep] = useState(0);
   const [showAlert, setShowAlert] = useState(false);
   const [reportList, setReportList] = useState<ReportRecord[]>([]);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareText, setShareText] = useState('');
+  const [shareTitle, setShareTitle] = useState('');
+  const [shareReport, setShareReport] = useState<ReportRecord | null>(null);
+  const [shareMode, setShareMode] = useState<'new' | 'existing'>('new');
   const searchParams = useSearchParams();
 
   const guideSteps = [
@@ -559,6 +564,23 @@ export default function MapClient() {
       wrapper.appendChild(ratingWrap);
     }
 
+    const shareButton = document.createElement('button');
+    shareButton.type = 'button';
+    shareButton.textContent = 'Compartir';
+    shareButton.style.width = '100%';
+    shareButton.style.padding = '8px 12px';
+    shareButton.style.borderRadius = '14px';
+    shareButton.style.border = '1px solid #0f172a';
+    shareButton.style.background = '#ffffff';
+    shareButton.style.color = '#0f172a';
+    shareButton.style.fontSize = '12px';
+    shareButton.style.fontWeight = '600';
+    shareButton.style.cursor = 'pointer';
+    shareButton.addEventListener('click', () => {
+      openShare(report, 'existing');
+    });
+    wrapper.appendChild(shareButton);
+
     if (photoUrl) {
       const img = document.createElement('img');
       img.src = photoUrl;
@@ -608,6 +630,34 @@ export default function MapClient() {
     });
 
     savedMarkersRef.current.push(marker);
+  }
+
+  function openShare(report: ReportRecord, mode: 'new' | 'existing') {
+    const origin =
+      typeof window !== 'undefined' ? window.location.origin : '';
+    const link = `${origin}/map?focus=${report.id}`;
+    const daysAgo = Math.max(
+      0,
+      Math.floor(
+        (Date.now() - new Date(report.created_at).getTime()) / 86400000,
+      ),
+    );
+    if (mode === 'new') {
+      setShareTitle('¿Quieres compartir tu aporte?');
+      setShareText(
+        `Acabo de reportar un bache en Bachejoa Map.\nEntre más lo veamos, más difícil es ignorarlo.\n👉 ${origin}`,
+      );
+    } else {
+      setShareTitle('Este bache sigue aquí');
+      setShareText(
+        `Este bache ya fue reportado en Bachejoa Map.\nTiene ${
+          report.angry_count ?? 0
+        } me enoja y sigue sin atención.\nReportado hace ${daysAgo} días.\n\nMíralo aquí 👉 ${link}`,
+      );
+    }
+    setShareReport(report);
+    setShareMode(mode);
+    setShareOpen(true);
   }
 
   return (
@@ -934,6 +984,7 @@ export default function MapClient() {
                       if (res.ok) {
                         const report = (await res.json()) as ReportRecord;
                         addReportMarker(report);
+                        openShare(report, 'new');
                       }
                     } finally {
                       setIsSaving(false);
@@ -988,6 +1039,173 @@ export default function MapClient() {
                   <span className="text-[10px] text-slate-500">{photoName}</span>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {shareOpen && shareReport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4">
+          <div className="relative w-full max-w-lg rounded-[28px] bg-white px-6 py-5 shadow-[0_24px_50px_rgba(15,23,42,0.35)]">
+            <h2 className="text-lg font-semibold text-slate-900">
+              {shareTitle}
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              {shareMode === 'new'
+                ? 'Tu reporte ya está en el mapa. Si quieres, compártelo y ayuda a que más gente lo vea.'
+                : 'Compártelo para que más gente lo vea y no se ignore.'}
+            </p>
+
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <label className="text-xs font-semibold text-slate-600">
+                Texto para compartir
+              </label>
+              <textarea
+                className="mt-2 min-h-[120px] w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+                value={shareText}
+                onChange={(event) => setShareText(event.target.value)}
+              />
+            </div>
+
+            {shareMode === 'existing' && (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                  Vista previa
+                </p>
+                <div className="mt-3 grid gap-3">
+                  {shareReport.photo_url ? (
+                    <img
+                      alt="Foto del bache"
+                      className="h-40 w-full rounded-2xl object-cover"
+                      src={shareReport.photo_url}
+                    />
+                  ) : (
+                    <div className="flex h-40 items-center justify-center rounded-2xl bg-slate-100 text-xs text-slate-500">
+                      Sin foto
+                    </div>
+                  )}
+                  <div className="grid gap-1 text-sm text-slate-700">
+                    <span>
+                      📍 {shareReport.lat.toFixed(4)}, {shareReport.lng.toFixed(4)}
+                    </span>
+                    <span>😡 {shareReport.angry_count ?? 0} me enoja</span>
+                    <span>
+                      🔗{' '}
+                      {typeof window !== 'undefined'
+                        ? `${window.location.origin}/map?focus=${shareReport.id}`
+                        : ''}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <p className="mt-3 text-[11px] text-slate-500">
+              No se comparte información personal ni datos del usuario.
+            </p>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {shareMode === 'new' && (
+                <>
+                  <button
+                    className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
+                    onClick={() => {
+                      const origin =
+                        typeof window !== 'undefined'
+                          ? window.location.origin
+                          : '';
+                      const url = encodeURIComponent(origin);
+                      window.open(
+                        `https://www.facebook.com/sharer/sharer.php?u=${url}`,
+                        '_blank',
+                      );
+                    }}
+                    type="button"
+                  >
+                    Compartir en Facebook
+                  </button>
+                  <button
+                    className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                    onClick={() => {
+                      const origin =
+                        typeof window !== 'undefined'
+                          ? window.location.origin
+                          : '';
+                      const text = encodeURIComponent(shareText);
+                      const url = encodeURIComponent(origin);
+                      window.open(
+                        `https://twitter.com/intent/tweet?text=${text}&url=${url}`,
+                        '_blank',
+                      );
+                    }}
+                    type="button"
+                  >
+                    Compartir en X
+                  </button>
+                </>
+              )}
+              {shareMode === 'existing' && (
+                <>
+                  <button
+                    className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
+                    onClick={() => {
+                      const origin =
+                        typeof window !== 'undefined'
+                          ? window.location.origin
+                          : '';
+                      const link = `${origin}/map?focus=${shareReport.id}`;
+                      const text = encodeURIComponent(shareText);
+                      const url = encodeURIComponent(link);
+                      window.open(
+                        `https://twitter.com/intent/tweet?text=${text}&url=${url}`,
+                        '_blank',
+                      );
+                    }}
+                    type="button"
+                  >
+                    Compartir
+                  </button>
+                </>
+              )}
+              <button
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                onClick={() => {
+                  const origin =
+                    typeof window !== 'undefined'
+                      ? window.location.origin
+                      : '';
+                  const link =
+                    shareMode === 'existing'
+                      ? `${origin}/map?focus=${shareReport.id}`
+                      : origin;
+                  navigator.clipboard.writeText(link).catch(() => {});
+                }}
+                type="button"
+              >
+                Copiar enlace
+              </button>
+              {shareMode === 'existing' && (
+                <button
+                  className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                  onClick={() => {
+                    const origin =
+                      typeof window !== 'undefined'
+                        ? window.location.origin
+                        : '';
+                    window.location.href = `${origin}/map?focus=${shareReport.id}`;
+                  }}
+                  type="button"
+                >
+                  Ver en el mapa
+                </button>
+              )}
+              <button
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                onClick={() => setShareOpen(false)}
+                type="button"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>
