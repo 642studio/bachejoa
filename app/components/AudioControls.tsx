@@ -65,7 +65,7 @@ export default function AudioControls({
     <div
       className={
         className ??
-        'absolute bottom-6 right-6 z-20 flex items-center gap-2 rounded-full border-2 border-white/80 bg-white/70 px-3 py-2 text-xs font-semibold text-slate-700 shadow-lg backdrop-blur-sm'
+        'absolute top-6 left-6 z-20 flex items-center gap-2 rounded-full border-2 border-white/80 bg-white/70 px-3 py-2 text-xs font-semibold text-slate-700 shadow-lg backdrop-blur-sm'
       }
     >
       <audio
