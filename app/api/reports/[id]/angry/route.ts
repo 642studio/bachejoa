@@ -5,11 +5,10 @@ import { getClientFingerprint, rateLimit } from '../../../../../lib/security';
 export const runtime = 'nodejs';
 
 export async function POST(
-  _request: Request,
-  { params }: { params: { id: string } },
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const request = _request;
-  const reportId = params.id;
+  const { id: reportId } = await params;
   if (!reportId) {
     return NextResponse.json({ error: 'Missing id' }, { status: 400 });
   }

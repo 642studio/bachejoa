@@ -6,9 +6,9 @@ export const runtime = 'nodejs';
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const reportId = params.id;
+  const { id: reportId } = await params;
   if (!reportId) {
     return NextResponse.json({ error: 'Missing id' }, { status: 400 });
   }
