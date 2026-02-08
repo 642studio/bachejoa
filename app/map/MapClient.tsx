@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AudioControls from '../components/AudioControls';
-import { supabaseClient } from '../../lib/supabase/client';
 
 declare global {
   interface Window {
@@ -993,20 +992,21 @@ export default function MapClient() {
                             signedUrl: string;
                             publicUrl: string | null;
                           };
-                          if (supabaseClient) {
-                            const { error: uploadError } =
-                              await supabaseClient.storage
-                                .from(uploadData.bucket)
-                                .uploadToSignedUrl(
-                                  uploadData.path,
-                                  uploadData.signedUrl,
-                                  photoFile,
-                                );
-                            if (uploadError) {
-                              alert('No se pudo subir la foto.');
-                              setIsSaving(false);
-                              return;
-                            }
+                          const uploadResponse = await fetch(
+                            uploadData.signedUrl,
+                            {
+                              method: 'PUT',
+                              headers: {
+                                'Content-Type':
+                                  photoFile.type || 'application/octet-stream',
+                              },
+                              body: photoFile,
+                            },
+                          );
+                          if (!uploadResponse.ok) {
+                            alert('No se pudo subir la foto.');
+                            setIsSaving(false);
+                            return;
                           }
                           if (uploadData.publicUrl) {
                             formData.append('photo_url', uploadData.publicUrl);
