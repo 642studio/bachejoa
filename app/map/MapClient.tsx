@@ -758,7 +758,7 @@ export default function MapClient() {
         src="/audio/songintrofull.mp3"
         loop
         autoPlay
-        className="absolute top-4 right-4 z-20 flex items-center gap-2 rounded-full border-2 border-white/80 bg-white/70 px-3 py-2 text-xs font-semibold text-slate-700 shadow-lg backdrop-blur-sm sm:top-6 sm:left-6 sm:right-auto"
+        className="absolute top-4 left-4 z-20 flex items-center gap-2 rounded-full border-2 border-white/80 bg-white/70 px-3 py-2 text-xs font-semibold text-slate-700 shadow-lg backdrop-blur-sm sm:top-6 sm:left-6"
       />
       <div className="relative h-screen w-screen">
         <div className="absolute inset-0 overflow-hidden bg-white shadow-[0_30px_70px_rgba(15,23,42,0.25)]">
@@ -768,7 +768,7 @@ export default function MapClient() {
             </p>
           </div>
           <a
-            className="absolute left-4 top-24 z-10 w-28 rounded-3xl bg-white/90 px-3 py-3 shadow-[0_18px_34px_rgba(15,23,42,0.18)] backdrop-blur-sm sm:left-6 sm:top-16 sm:w-44"
+            className="absolute left-4 top-24 z-10 w-28 rounded-3xl bg-white/90 px-3 py-3 shadow-[0_18px_34px_rgba(15,23,42,0.18)] backdrop-blur-sm sm:left-6 sm:top-16 sm:w-32"
             href="/stats"
           >
             <div className="grid gap-2 text-slate-700">
