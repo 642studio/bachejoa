@@ -118,6 +118,19 @@ export default function MapClient() {
   const [shareMode, setShareMode] = useState<'new' | 'existing'>('new');
   const searchParams = useSearchParams();
 
+  const mapSummary = useMemo(() => {
+    const counts = new Map<string, number>();
+    bacheTypes.forEach((type) => counts.set(type.name, 0));
+    let withPhoto = 0;
+    let repaired = 0;
+    reportList.forEach((report) => {
+      counts.set(report.type, (counts.get(report.type) ?? 0) + 1);
+      if (report.photo_url) withPhoto += 1;
+      if (report.repaired) repaired += 1;
+    });
+    return { counts, withPhoto, repaired };
+  }, [reportList]);
+
   const guideSteps = [
     '👋 ¡Bienvenido! Soy El Presi. Aquí te voy a enseñar cómo reportar baches y ayudar a mejorar Navojoa… paso a paso y sin rodeos.',
     '🗺️ Muévete por el mapa con tu dedo o mouse hasta encontrar el bache que te hizo sufrir.',
@@ -669,6 +682,39 @@ export default function MapClient() {
             <p className="text-sm font-semibold text-slate-700">
               Navojoa, Sonora
             </p>
+          </div>
+          <div className="absolute left-6 top-16 z-10 w-64 rounded-3xl bg-white/90 px-4 py-4 shadow-[0_18px_34px_rgba(15,23,42,0.18)] backdrop-blur-sm">
+            <p className="text-xs uppercase tracking-[0.25em] text-slate-400">
+              Resumen rápido
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-3 text-slate-700">
+              {bacheTypes.map((type) => (
+                <div key={type.name} className="flex items-center gap-2">
+                  <img alt={type.name} className="h-6 w-6" src={type.icon} />
+                  <span className="text-sm font-semibold">
+                    {mapSummary.counts.get(type.name) ?? 0}
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-center gap-2">
+                <img alt="Con foto" className="h-6 w-6" src="/camera.svg" />
+                <span className="text-sm font-semibold">
+                  {mapSummary.withPhoto}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <img alt="Reparados" className="h-6 w-6" src="/reparado.svg" />
+                <span className="text-sm font-semibold">
+                  {mapSummary.repaired}
+                </span>
+              </div>
+            </div>
+            <a
+              className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
+              href="/stats"
+            >
+              Ver stats completas
+            </a>
           </div>
           <button
             className="absolute right-6 top-6 z-10 flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-[0_12px_22px_rgba(15,23,42,0.3)]"
