@@ -190,6 +190,15 @@ export default function MapClient() {
     }
   }, []);
 
+  function isLastCreated(reportId: string) {
+    if (reportId === lastCreatedId) return true;
+    try {
+      return window.localStorage.getItem('bachejoa_last_report') === reportId;
+    } catch {
+      return false;
+    }
+  }
+
   useEffect(() => {
     if (!mapReady || !mapInstanceRef.current) return;
     let isActive = true;
@@ -582,7 +591,7 @@ export default function MapClient() {
       wrapper.appendChild(ratingWrap);
     }
 
-    if (reportId === lastCreatedId) {
+    if (isLastCreated(reportId)) {
       const deleteWrap = document.createElement('div');
       deleteWrap.style.display = 'flex';
       deleteWrap.style.justifyContent = 'flex-end';
