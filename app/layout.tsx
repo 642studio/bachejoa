@@ -24,7 +24,7 @@ const monoFont = IBM_Plex_Mono({
 });
 
 export const metadata = {
-  title: 'Bachejoa Map · Navojoa',
+  title: 'Bachejoa Map — Reporta baches en Navojoa',
   description:
     'Mapa interactivo para reportar baches en Navojoa, Sonora. Juega, reporta y mejora tu ruta.',
   icons: {
