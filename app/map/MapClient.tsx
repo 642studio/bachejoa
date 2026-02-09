@@ -754,7 +754,12 @@ export default function MapClient() {
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900">
-      <AudioControls src="/audio/songintrofull.mp3" loop autoPlay />
+      <AudioControls
+        src="/audio/songintrofull.mp3"
+        loop
+        autoPlay
+        className="absolute top-4 right-4 z-20 flex items-center gap-2 rounded-full border-2 border-white/80 bg-white/70 px-3 py-2 text-xs font-semibold text-slate-700 shadow-lg backdrop-blur-sm sm:top-6 sm:left-6 sm:right-auto"
+      />
       <div className="relative h-screen w-screen">
         <div className="absolute inset-0 overflow-hidden bg-white shadow-[0_30px_70px_rgba(15,23,42,0.25)]">
           <div className="absolute left-6 top-6 z-10">
@@ -762,11 +767,11 @@ export default function MapClient() {
               Navojoa, Sonora
             </p>
           </div>
-          <div className="absolute left-6 top-16 z-10 w-64 rounded-3xl bg-white/90 px-4 py-4 shadow-[0_18px_34px_rgba(15,23,42,0.18)] backdrop-blur-sm">
-            <p className="text-xs uppercase tracking-[0.25em] text-slate-400">
-              Resumen rápido
-            </p>
-            <div className="mt-3 grid grid-cols-2 gap-3 text-slate-700">
+          <a
+            className="absolute left-4 top-24 z-10 w-40 rounded-3xl bg-white/90 px-4 py-4 shadow-[0_18px_34px_rgba(15,23,42,0.18)] backdrop-blur-sm sm:left-6 sm:top-16 sm:w-56"
+            href="/stats"
+          >
+            <div className="grid gap-2 text-slate-700">
               {bacheTypes.map((type) => (
                 <div key={type.name} className="flex items-center gap-2">
                   <img alt={type.name} className="h-6 w-6" src={type.icon} />
@@ -788,13 +793,7 @@ export default function MapClient() {
                 </span>
               </div>
             </div>
-            <a
-              className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
-              href="/stats"
-            >
-              Ver stats completas
-            </a>
-          </div>
+          </a>
           <button
             className="absolute right-6 top-6 z-10 flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-[0_12px_22px_rgba(15,23,42,0.3)]"
             onClick={() => setShowAlert(true)}
