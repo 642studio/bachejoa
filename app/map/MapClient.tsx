@@ -184,6 +184,10 @@ export default function MapClient() {
       setShowGuide(true);
       setGuideStep(0);
     }
+    const last = window.localStorage.getItem('bachejoa_last_report');
+    if (last) {
+      setLastCreatedId(last);
+    }
   }, []);
 
   useEffect(() => {
@@ -579,20 +583,32 @@ export default function MapClient() {
     }
 
     if (reportId === lastCreatedId) {
+      const deleteWrap = document.createElement('div');
+      deleteWrap.style.display = 'flex';
+      deleteWrap.style.justifyContent = 'flex-end';
+
       const deleteButton = document.createElement('button');
       deleteButton.type = 'button';
-      deleteButton.textContent = 'Eliminar este reporte';
-      deleteButton.style.width = '100%';
-      deleteButton.style.padding = '8px 12px';
-      deleteButton.style.borderRadius = '14px';
-      deleteButton.style.border = '1px solid #ef4444';
-      deleteButton.style.background = '#fee2e2';
-      deleteButton.style.color = '#991b1b';
-      deleteButton.style.fontSize = '12px';
-      deleteButton.style.fontWeight = '600';
+      deleteButton.style.width = '36px';
+      deleteButton.style.height = '36px';
+      deleteButton.style.borderRadius = '999px';
+      deleteButton.style.border = '1px solid #fecaca';
+      deleteButton.style.background = '#fff1f2';
+      deleteButton.style.display = 'inline-flex';
+      deleteButton.style.alignItems = 'center';
+      deleteButton.style.justifyContent = 'center';
       deleteButton.style.cursor = 'pointer';
+
+      const deleteIcon = document.createElement('img');
+      deleteIcon.src = '/trash.svg';
+      deleteIcon.alt = 'Eliminar';
+      deleteIcon.style.width = '18px';
+      deleteIcon.style.height = '18px';
+
+      deleteButton.appendChild(deleteIcon);
       deleteButton.addEventListener('click', () => deleteReport(reportId));
-      wrapper.appendChild(deleteButton);
+      deleteWrap.appendChild(deleteButton);
+      wrapper.appendChild(deleteWrap);
     }
 
     const shareButton = document.createElement('button');
@@ -687,6 +703,7 @@ export default function MapClient() {
       if (lastCreatedId === reportId) {
         setLastCreatedId(null);
       }
+      window.localStorage.removeItem('bachejoa_last_report');
       infoWindowRef.current?.close();
     } catch {
       alert('No se pudo eliminar el reporte.');
@@ -1122,6 +1139,10 @@ export default function MapClient() {
                         addReportMarker(report);
                         openShare(report, 'new');
                         setLastCreatedId(report.id);
+                        window.localStorage.setItem(
+                          'bachejoa_last_report',
+                          report.id,
+                        );
                       }
                     } finally {
                       setIsSaving(false);
