@@ -27,6 +27,19 @@ export const metadata = {
   title: 'Bachejoa Map — Reporta baches en Navojoa',
   description:
     'Mapa interactivo para reportar baches en Navojoa, Sonora. Juega, reporta y mejora tu ruta.',
+  openGraph: {
+    title: 'Bachejoa Map — Reporta baches en Navojoa',
+    description:
+      'Mapa interactivo para reportar baches en Navojoa, Sonora. Juega, reporta y mejora tu ruta.',
+    images: ['/thumb.png'],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Bachejoa Map — Reporta baches en Navojoa',
+    description:
+      'Mapa interactivo para reportar baches en Navojoa, Sonora. Juega, reporta y mejora tu ruta.',
+    images: ['/thumb.png'],
+  },
   icons: {
     icon: [
       { url: '/favicon/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
