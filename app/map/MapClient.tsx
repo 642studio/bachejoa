@@ -116,6 +116,7 @@ export default function MapClient() {
   const [shareTitle, setShareTitle] = useState('');
   const [shareReport, setShareReport] = useState<ReportRecord | null>(null);
   const [shareMode, setShareMode] = useState<'new' | 'existing'>('new');
+  const [lastCreatedId, setLastCreatedId] = useState<string | null>(null);
   const searchParams = useSearchParams();
 
   const mapSummary = useMemo(() => {
@@ -645,6 +646,36 @@ export default function MapClient() {
     savedMarkersRef.current.push(marker);
   }
 
+  async function handleDeleteLast() {
+    if (!lastCreatedId) return;
+    const confirmDelete = window.confirm(
+      '¿Eliminar el último reporte que acabas de crear?',
+    );
+    if (!confirmDelete) return;
+    try {
+      const res = await fetch(`/api/reports/${lastCreatedId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        alert('No se pudo eliminar el reporte.');
+        return;
+      }
+      const markerIndex = savedMarkersRef.current.findIndex(
+        (marker) => marker.reportId === lastCreatedId,
+      );
+      if (markerIndex !== -1) {
+        savedMarkersRef.current[markerIndex].setMap(null);
+        savedMarkersRef.current.splice(markerIndex, 1);
+      }
+      setReportList((prev) =>
+        prev.filter((report) => report.id !== lastCreatedId),
+      );
+      setLastCreatedId(null);
+    } catch {
+      alert('No se pudo eliminar el reporte.');
+    }
+  }
+
   function openShare(report: ReportRecord, mode: 'new' | 'existing') {
     const origin =
       typeof window !== 'undefined' ? window.location.origin : '';
@@ -788,7 +819,7 @@ export default function MapClient() {
               >
                 <img
                   alt="Personajes"
-                  className="h-6 w-6"
+                  className="h-6 w-6 object-contain"
                   src="/personajes/personajes.svg"
                 />
               </a>
@@ -799,6 +830,16 @@ export default function MapClient() {
               >
                 <img alt="Estadísticas" className="h-6 w-6" src="/stats.svg" />
               </a>
+
+              {lastCreatedId && (
+                <button
+                  className="absolute right-2 top-10 flex h-10 w-10 items-center justify-center rounded-full bg-white text-xs font-semibold text-slate-700 shadow-[0_12px_22px_rgba(15,23,42,0.3)]"
+                  onClick={handleDeleteLast}
+                  type="button"
+                >
+                  <img alt="Eliminar" className="h-5 w-5" src="/trash.svg" />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1072,6 +1113,7 @@ export default function MapClient() {
                         const report = (await res.json()) as ReportRecord;
                         addReportMarker(report);
                         openShare(report, 'new');
+                        setLastCreatedId(report.id);
                       }
                     } finally {
                       setIsSaving(false);
