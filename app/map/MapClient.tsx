@@ -595,6 +595,7 @@ export default function MapClient() {
       const deleteWrap = document.createElement('div');
       deleteWrap.style.display = 'flex';
       deleteWrap.style.justifyContent = 'flex-end';
+      deleteWrap.style.marginTop = '4px';
 
       const deleteButton = document.createElement('button');
       deleteButton.type = 'button';
@@ -607,12 +608,16 @@ export default function MapClient() {
       deleteButton.style.alignItems = 'center';
       deleteButton.style.justifyContent = 'center';
       deleteButton.style.cursor = 'pointer';
+      deleteButton.title = 'Eliminar este reporte';
 
       const deleteIcon = document.createElement('img');
-      deleteIcon.src = '/trash.svg';
+      const origin =
+        typeof window !== 'undefined' ? window.location.origin : '';
+      deleteIcon.src = `${origin}/trash.svg`;
       deleteIcon.alt = 'Eliminar';
       deleteIcon.style.width = '18px';
       deleteIcon.style.height = '18px';
+      deleteIcon.style.display = 'block';
 
       deleteButton.appendChild(deleteIcon);
       deleteButton.addEventListener('click', () => deleteReport(reportId));
