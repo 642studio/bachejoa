@@ -4,6 +4,7 @@ import {
   Space_Grotesk,
   IBM_Plex_Mono,
 } from 'next/font/google';
+import { Analytics } from '@vercel/analytics/next';
 
 const displayFont = Luckiest_Guy({
   subsets: ['latin'],
@@ -39,6 +40,7 @@ export default function RootLayout({
         className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable} min-h-screen bg-sky-200 text-slate-900 antialiased font-[var(--font-body)]`}
       >
         {children}
+        <Analytics />
       </body>
     </html>
   );
