@@ -578,6 +578,23 @@ export default function MapClient() {
       wrapper.appendChild(ratingWrap);
     }
 
+    if (reportId === lastCreatedId) {
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.textContent = 'Eliminar este reporte';
+      deleteButton.style.width = '100%';
+      deleteButton.style.padding = '8px 12px';
+      deleteButton.style.borderRadius = '14px';
+      deleteButton.style.border = '1px solid #ef4444';
+      deleteButton.style.background = '#fee2e2';
+      deleteButton.style.color = '#991b1b';
+      deleteButton.style.fontSize = '12px';
+      deleteButton.style.fontWeight = '600';
+      deleteButton.style.cursor = 'pointer';
+      deleteButton.addEventListener('click', () => deleteReport(reportId));
+      wrapper.appendChild(deleteButton);
+    }
+
     const shareButton = document.createElement('button');
     shareButton.type = 'button';
     shareButton.textContent = 'Compartir';
@@ -646,14 +663,13 @@ export default function MapClient() {
     savedMarkersRef.current.push(marker);
   }
 
-  async function handleDeleteLast() {
-    if (!lastCreatedId) return;
+  async function deleteReport(reportId: string) {
     const confirmDelete = window.confirm(
-      '¿Eliminar el último reporte que acabas de crear?',
+      '¿Eliminar el reporte que acabas de crear?',
     );
     if (!confirmDelete) return;
     try {
-      const res = await fetch(`/api/reports/${lastCreatedId}`, {
+      const res = await fetch(`/api/reports/${reportId}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
@@ -661,16 +677,17 @@ export default function MapClient() {
         return;
       }
       const markerIndex = savedMarkersRef.current.findIndex(
-        (marker) => marker.reportId === lastCreatedId,
+        (marker) => marker.reportId === reportId,
       );
       if (markerIndex !== -1) {
         savedMarkersRef.current[markerIndex].setMap(null);
         savedMarkersRef.current.splice(markerIndex, 1);
       }
-      setReportList((prev) =>
-        prev.filter((report) => report.id !== lastCreatedId),
-      );
-      setLastCreatedId(null);
+      setReportList((prev) => prev.filter((report) => report.id !== reportId));
+      if (lastCreatedId === reportId) {
+        setLastCreatedId(null);
+      }
+      infoWindowRef.current?.close();
     } catch {
       alert('No se pudo eliminar el reporte.');
     }
@@ -831,15 +848,6 @@ export default function MapClient() {
                 <img alt="Estadísticas" className="h-6 w-6" src="/stats.svg" />
               </a>
 
-              {lastCreatedId && (
-                <button
-                  className="absolute right-2 top-10 flex h-10 w-10 items-center justify-center rounded-full bg-white text-xs font-semibold text-slate-700 shadow-[0_12px_22px_rgba(15,23,42,0.3)]"
-                  onClick={handleDeleteLast}
-                  type="button"
-                >
-                  <img alt="Eliminar" className="h-5 w-5" src="/trash.svg" />
-                </button>
-              )}
             </div>
           </div>
         </div>
