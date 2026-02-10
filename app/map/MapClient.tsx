@@ -768,27 +768,27 @@ export default function MapClient() {
             </p>
           </div>
           <a
-            className="absolute left-4 top-24 z-10 w-28 rounded-3xl bg-white/90 px-3 py-3 shadow-[0_18px_34px_rgba(15,23,42,0.18)] backdrop-blur-sm sm:left-6 sm:top-16 sm:w-32"
+            className="absolute left-4 top-24 z-10 w-20 rounded-3xl bg-white/90 px-3 py-3 shadow-[0_18px_34px_rgba(15,23,42,0.18)] backdrop-blur-sm sm:left-6 sm:top-16 sm:w-24"
             href="/stats"
           >
             <div className="grid gap-2 text-slate-700">
               {bacheTypes.map((type) => (
                 <div key={type.name} className="flex items-center gap-2">
-                  <img alt={type.name} className="h-5 w-5" src={type.icon} />
-                  <span className="text-xs font-semibold">
+                  <img alt={type.name} className="h-4 w-4" src={type.icon} />
+                  <span className="text-[10px] font-semibold">
                     {mapSummary.counts.get(type.name) ?? 0}
                   </span>
                 </div>
               ))}
               <div className="flex items-center gap-2">
-                <img alt="Con foto" className="h-5 w-5" src="/camera.svg" />
-                <span className="text-xs font-semibold">
+                <img alt="Con foto" className="h-4 w-4" src="/camera.svg" />
+                <span className="text-[10px] font-semibold">
                   {mapSummary.withPhoto}
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <img alt="Reparados" className="h-5 w-5" src="/reparado.svg" />
-                <span className="text-xs font-semibold">
+                <img alt="Reparados" className="h-4 w-4" src="/reparado.svg" />
+                <span className="text-[10px] font-semibold">
                   {mapSummary.repaired}
                 </span>
               </div>
@@ -867,7 +867,7 @@ export default function MapClient() {
                 <img
                   alt="Personajes"
                   className="h-6 w-6 object-contain"
-                  src="/personajes/personajes.svg"
+                  src="/personajes/personajes.svg?v=2"
                 />
               </a>
 
