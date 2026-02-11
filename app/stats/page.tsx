@@ -30,11 +30,31 @@ export default function StatsPage() {
   useEffect(() => {
     let isActive = true;
     setIsLoading(true);
-    fetch('/api/reports')
-      .then(async (res) => {
-        if (!res.ok) return [];
-        return (await res.json()) as ReportRecord[];
-      })
+    const fetchAllReports = async () => {
+      let all: ReportRecord[] = [];
+      let cursor: { cursor: string; cursor_id: string } | null = null;
+      while (true) {
+        const params = new URLSearchParams();
+        params.set('limit', '200');
+        if (cursor) {
+          params.set('cursor', cursor.cursor);
+          params.set('cursor_id', cursor.cursor_id);
+        }
+        const res = await fetch(`/api/reports?${params.toString()}`);
+        if (!res.ok) break;
+        const payload = (await res.json()) as {
+          data: ReportRecord[];
+          nextCursor: { cursor: string; cursor_id: string } | null;
+        };
+        const chunk = payload.data ?? [];
+        all = all.concat(chunk);
+        if (!payload.nextCursor) break;
+        cursor = payload.nextCursor;
+      }
+      return all;
+    };
+
+    fetchAllReports()
       .then((data) => {
         if (!isActive) return;
         setReports(Array.isArray(data) ? data : []);

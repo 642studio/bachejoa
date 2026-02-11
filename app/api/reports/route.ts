@@ -10,20 +10,42 @@ function sanitizeFilename(name: string) {
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
-export async function GET() {
-  const { data, error } = await supabaseServer
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const limit = Math.min(Number(searchParams.get('limit') ?? 200) || 200, 500);
+  const cursor = searchParams.get('cursor');
+  const cursorId = searchParams.get('cursor_id');
+
+  let query = supabaseServer
     .from('reports')
     .select(
       'id, lat, lng, type, photo_url, created_at, angry_count, repaired, repaired_at, repair_rating_avg, repair_rating_count',
     )
     .order('created_at', { ascending: false })
-    .limit(200);
+    .order('id', { ascending: false })
+    .limit(limit);
+
+  if (cursor && cursorId) {
+    query = query.or(
+      `created_at.lt.${cursor},and(created_at.eq.${cursor},id.lt.${cursorId})`,
+    );
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data ?? []);
+  const nextCursor =
+    data && data.length === limit ? data[data.length - 1] : null;
+
+  return NextResponse.json({
+    data: data ?? [],
+    nextCursor: nextCursor
+      ? { cursor: nextCursor.created_at, cursor_id: nextCursor.id }
+      : null,
+  });
 }
 
 export async function POST(request: Request) {
