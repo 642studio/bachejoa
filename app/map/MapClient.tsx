@@ -144,6 +144,8 @@ export default function MapClient() {
   const [shareReport, setShareReport] = useState<ReportRecord | null>(null);
   const [shareMode, setShareMode] = useState<'new' | 'existing'>('new');
   const [lastCreatedId, setLastCreatedId] = useState<string | null>(null);
+  const [showFollow, setShowFollow] = useState(false);
+  const [dontShowFollow, setDontShowFollow] = useState(false);
   const searchParams = useSearchParams();
   const [showDetailedPins, setShowDetailedPins] = useState(false);
 
@@ -238,6 +240,10 @@ export default function MapClient() {
     const last = window.localStorage.getItem('bachejoa_last_report');
     if (last) {
       setLastCreatedId(last);
+    }
+    const hideFollow = window.localStorage.getItem('bachejoa_follow_hide');
+    if (!hideFollow) {
+      setTimeout(() => setShowFollow(true), 800);
     }
   }, []);
 
@@ -1456,6 +1462,59 @@ export default function MapClient() {
                 Cerrar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showFollow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4">
+          <div className="relative w-full max-w-md rounded-[28px] bg-white px-6 py-5 shadow-[0_24px_50px_rgba(15,23,42,0.35)]">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Síguenos en redes 👀
+            </h2>
+            <p className="mt-3 text-sm text-slate-600">
+              Estamos compartiendo actualizaciones, nuevos reportes y avances del
+              mapa. Forma parte de la conversación.
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              Facebook: bachejoa.com · Instagram: @bachejoa
+            </p>
+
+            <button
+              className="mt-4 w-full rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+              onClick={() => {
+                window.open(
+                  'https://www.facebook.com/profile.php?id=61587512867475',
+                  '_blank',
+                );
+              }}
+              type="button"
+            >
+              Seguir Bachejoa
+            </button>
+
+            <label className="mt-4 flex items-center gap-2 text-xs text-slate-500">
+              <input
+                checked={dontShowFollow}
+                className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                onChange={(event) => setDontShowFollow(event.target.checked)}
+                type="checkbox"
+              />
+              No volver a mostrar
+            </label>
+
+            <button
+              className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-700"
+              onClick={() => {
+                if (dontShowFollow) {
+                  window.localStorage.setItem('bachejoa_follow_hide', 'true');
+                }
+                setShowFollow(false);
+              }}
+              type="button"
+            >
+              ×
+            </button>
           </div>
         </div>
       )}
