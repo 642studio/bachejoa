@@ -193,7 +193,7 @@ export default function MapClient() {
         mapInstanceRef.current = map;
         infoWindowRef.current = new google.maps.InfoWindow();
         setMapReady(true);
-        setShowDetailedPins(map.getZoom() >= 14);
+        setShowDetailedPins(map.getZoom() >= 16);
 
         map.addListener('click', (event: any) => {
           if (!event.latLng) return;
@@ -204,7 +204,7 @@ export default function MapClient() {
 
         map.addListener('zoom_changed', () => {
           const zoom = map.getZoom() ?? 0;
-          const detailed = zoom >= 14;
+          const detailed = zoom >= 16;
           setShowDetailedPins(detailed);
           savedMarkersRef.current.forEach((marker) => {
             const report: ReportRecord | undefined = marker.reportData;
