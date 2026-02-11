@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AudioControls from '../components/AudioControls';
+import { MarkerClusterer } from '@googlemaps/markerclusterer';
 
 declare global {
   interface Window {
@@ -126,6 +127,7 @@ export default function MapClient() {
   const tempGlowRef = useRef<any>(null);
   const savedMarkersRef = useRef<any[]>([]);
   const infoWindowRef = useRef<any>(null);
+  const clustererRef = useRef<MarkerClusterer | null>(null);
   const focusedRef = useRef(false);
   const [newPin, setNewPin] = useState<LatLngLiteral | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -194,6 +196,10 @@ export default function MapClient() {
 
         mapInstanceRef.current = map;
         infoWindowRef.current = new google.maps.InfoWindow();
+        clustererRef.current = new MarkerClusterer({
+          map,
+          markers: [],
+        });
         setMapReady(true);
         setShowDetailedPins(map.getZoom() >= 16);
 
@@ -224,6 +230,7 @@ export default function MapClient() {
               marker.setIcon(createDotIcon(resolveTypeColor(report.type)));
             }
           });
+          clustererRef.current?.render();
         });
       })
       .catch(() => {
@@ -289,6 +296,7 @@ export default function MapClient() {
         setReportList(reports);
         savedMarkersRef.current.forEach((marker) => marker.setMap(null));
         savedMarkersRef.current = [];
+        clustererRef.current?.clearMarkers();
         reports.forEach((report) => addReportMarker(report));
       })
       .catch(() => {});
@@ -749,7 +757,6 @@ export default function MapClient() {
     if (!mapInstanceRef.current) return;
     const type = resolveTypeIcon(report.type);
     const marker = new google.maps.Marker({
-      map: mapInstanceRef.current,
       position: { lat: report.lat, lng: report.lng },
       draggable: false,
       icon: report.repaired
@@ -775,6 +782,7 @@ export default function MapClient() {
     });
 
     savedMarkersRef.current.push(marker);
+    clustererRef.current?.addMarker(marker, true);
   }
 
   async function deleteReport(reportId: string) {
