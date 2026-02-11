@@ -120,6 +120,16 @@ export default function StatsPage() {
       .slice(0, 5);
   }, [reports]);
 
+  const latestWithPhoto = useMemo(() => {
+    return reports
+      .filter((report) => report.photo_url)
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      )
+      .slice(0, 6);
+  }, [reports]);
+
   return (
     <main className="reportes-root min-h-screen text-slate-900">
       <div className="mx-auto max-w-6xl px-6 py-12">
@@ -356,6 +366,58 @@ export default function StatsPage() {
                   </div>
                 ))}
             </div>
+          </div>
+        </section>
+
+        <section className="mt-10 rounded-[32px] bg-white/90 p-6 shadow-[0_20px_40px_rgba(15,23,42,0.12)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold">Últimos con foto</h2>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+              Reportes recientes
+            </p>
+          </div>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {isLoading && (
+              <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                Cargando fotos...
+              </div>
+            )}
+            {!isLoading && latestWithPhoto.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                Aún no hay reportes con foto.
+              </div>
+            )}
+            {!isLoading &&
+              latestWithPhoto.map((report) => (
+                <div
+                  key={report.id}
+                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
+                >
+                  <div className="h-36 w-full overflow-hidden bg-slate-100">
+                    <img
+                      alt={`Reporte ${report.type}`}
+                      className="h-full w-full object-cover"
+                      src={report.photo_url ?? ''}
+                    />
+                  </div>
+                  <div className="px-4 py-3 text-sm text-slate-700">
+                    <p className="font-semibold">{report.type}</p>
+                    <p className="text-xs text-slate-500">
+                      {new Date(report.created_at).toLocaleDateString('es-MX', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </p>
+                    <a
+                      className="mt-2 inline-flex rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
+                      href={`/map?focus=${report.id}`}
+                    >
+                      Ver en mapa
+                    </a>
+                  </div>
+                </div>
+              ))}
           </div>
         </section>
       </div>
