@@ -84,6 +84,33 @@ function createRepairedIcon() {
   };
 }
 
+function createDotIcon(color: string) {
+  return {
+    path: google.maps.SymbolPath.CIRCLE,
+    fillColor: color,
+    fillOpacity: 0.9,
+    strokeColor: '#ffffff',
+    strokeOpacity: 1,
+    strokeWeight: 2,
+    scale: 6,
+  };
+}
+
+function resolveTypeColor(typeName: string) {
+  switch (typeName) {
+    case 'Pequeña grieta':
+      return '#38bdf8';
+    case 'Bache':
+      return '#f97316';
+    case 'Bachesón':
+      return '#ef4444';
+    case 'Reparación inconclusa':
+      return '#eab308';
+    default:
+      return '#64748b';
+  }
+}
+
 function createGlowIcon(type: { name: string; icon: string }) {
   return {
     url: type.icon,
@@ -118,6 +145,7 @@ export default function MapClient() {
   const [shareMode, setShareMode] = useState<'new' | 'existing'>('new');
   const [lastCreatedId, setLastCreatedId] = useState<string | null>(null);
   const searchParams = useSearchParams();
+  const [showDetailedPins, setShowDetailedPins] = useState(false);
 
   const mapSummary = useMemo(() => {
     const counts = new Map<string, number>();
@@ -165,12 +193,35 @@ export default function MapClient() {
         mapInstanceRef.current = map;
         infoWindowRef.current = new google.maps.InfoWindow();
         setMapReady(true);
+        setShowDetailedPins(map.getZoom() >= 14);
 
         map.addListener('click', (event: any) => {
           if (!event.latLng) return;
           const pos = event.latLng.toJSON();
           setNewPin(pos);
           setIsDialogOpen(true);
+        });
+
+        map.addListener('zoom_changed', () => {
+          const zoom = map.getZoom() ?? 0;
+          const detailed = zoom >= 14;
+          setShowDetailedPins(detailed);
+          savedMarkersRef.current.forEach((marker) => {
+            const report: ReportRecord | undefined = marker.reportData;
+            if (!report) return;
+            if (report.repaired) {
+              marker.setIcon(
+                detailed ? createRepairedIcon() : createDotIcon('#22c55e'),
+              );
+              return;
+            }
+            if (detailed) {
+              const type = resolveTypeIcon(report.type);
+              marker.setIcon(createMarkerIcon(type));
+            } else {
+              marker.setIcon(createDotIcon(resolveTypeColor(report.type)));
+            }
+          });
         });
       })
       .catch(() => {
@@ -695,10 +746,17 @@ export default function MapClient() {
       map: mapInstanceRef.current,
       position: { lat: report.lat, lng: report.lng },
       draggable: false,
-      icon: report.repaired ? createRepairedIcon() : createMarkerIcon(type),
+      icon: report.repaired
+        ? showDetailedPins
+          ? createRepairedIcon()
+          : createDotIcon('#22c55e')
+        : showDetailedPins
+          ? createMarkerIcon(type)
+          : createDotIcon(resolveTypeColor(report.type)),
       zIndex: 2,
     });
     marker.reportId = report.id;
+    marker.reportData = report;
 
     marker.addListener('click', () => {
       if (!infoWindowRef.current) return;
