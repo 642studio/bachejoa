@@ -469,6 +469,7 @@ export default function MapClient() {
   const progressNoticeTimerRef = useRef<number | null>(null);
   const searchParams = useSearchParams();
   const [showDetailedPins, setShowDetailedPins] = useState(false);
+  const [showPatchBubble, setShowPatchBubble] = useState(false);
   const canModerateReports = useMemo(() => {
     if (!currentUser) return false;
     return currentUser.role === 'admin';
@@ -767,6 +768,10 @@ export default function MapClient() {
     const hideFollow = window.localStorage.getItem('bachejoa_follow_hide');
     if (!hideFollow) {
       setTimeout(() => setShowFollow(true), 800);
+    }
+    const hidePatchBubble = window.localStorage.getItem('bachejoa_patch_1_2_seen');
+    if (!hidePatchBubble) {
+      setShowPatchBubble(true);
     }
 
     fetchCurrentUser();
@@ -1936,6 +1941,44 @@ export default function MapClient() {
           >
             {currentUser ? `@${currentUser.username}` : 'Crear cuenta'}
           </button>
+          {showPatchBubble && (
+            <div className="absolute right-4 top-20 z-20 w-[calc(100vw-2rem)] max-w-md rounded-3xl border border-sky-200 bg-white/95 p-4 shadow-[0_18px_34px_rgba(15,23,42,0.2)] backdrop-blur-sm sm:right-6 sm:top-24 sm:w-[26rem]">
+              <button
+                aria-label="Cerrar aviso"
+                className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-600"
+                onClick={() => {
+                  window.localStorage.setItem('bachejoa_patch_1_2_seen', 'true');
+                  setShowPatchBubble(false);
+                }}
+                type="button"
+              >
+                ×
+              </button>
+              <p className="pr-8 text-sm font-semibold text-slate-900">
+                Bachejoa se actualizó.
+              </p>
+              <div className="mt-2 space-y-2 text-xs leading-relaxed text-slate-600">
+                <p>
+                  Seguimos construyendo la plataforma con ayuda de la comunidad.
+                  Esta versión agrega cuentas de usuario, nuevos tipos de reportes y
+                  mejoras en el mapa para entender mejor lo que pasa en la ciudad.
+                </p>
+                <p>
+                  Bachejoa ya no solo registra baches. Ahora también puedes reportar
+                  problemas de iluminación, agua, drenaje y basura.
+                </p>
+                <p>Estamos en evolución constante.</p>
+                <p>Si algo cambia, es porque lo estamos mejorando.</p>
+                <p>Gracias por ser parte.</p>
+              </div>
+              <a
+                className="mt-3 inline-flex rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
+                href="/parche"
+              >
+                Ver notas del parche
+              </a>
+            </div>
+          )}
 
           <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-center pt-10">
             <img
