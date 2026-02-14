@@ -24,20 +24,20 @@ const monoFont = IBM_Plex_Mono({
 });
 
 export const metadata = {
-  title: 'Bachejoa Map — Reporta baches en Navojoa',
+  title: 'Bachejoa Civic Data Platform',
   description:
-    'Mapa interactivo para reportar baches en Navojoa, Sonora. Juega, reporta y mejora tu ruta.',
+    'Plataforma ciudadana de reportes urbanos en Navojoa, Sonora.',
   openGraph: {
-    title: 'Bachejoa Map — Reporta baches en Navojoa',
+    title: 'Bachejoa Civic Data Platform',
     description:
-      'Mapa interactivo para reportar baches en Navojoa, Sonora. Juega, reporta y mejora tu ruta.',
+      'Plataforma ciudadana de reportes urbanos en Navojoa, Sonora.',
     images: ['/thumb.png'],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Bachejoa Map — Reporta baches en Navojoa',
+    title: 'Bachejoa Civic Data Platform',
     description:
-      'Mapa interactivo para reportar baches en Navojoa, Sonora. Juega, reporta y mejora tu ruta.',
+      'Plataforma ciudadana de reportes urbanos en Navojoa, Sonora.',
     images: ['/thumb.png'],
   },
   icons: {

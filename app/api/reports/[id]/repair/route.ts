@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { getSessionUser, isPlatformAdmin } from '../../../../../lib/auth';
+import { REPORT_SELECT } from '../../../../../lib/reporting';
 import { supabaseServer } from '../../../../../lib/supabase/server';
 import { rateLimit } from '../../../../../lib/security';
 
@@ -18,14 +20,27 @@ export async function POST(
     return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
   }
 
+  const user = await getSessionUser(request);
+  if (!isPlatformAdmin(user)) {
+    return NextResponse.json(
+      { error: 'Solo el admin puede cambiar etapas.' },
+      { status: 403 },
+    );
+  }
+
   const payload = (await request.json().catch(() => ({}))) as {
     repaired?: boolean;
   };
   const nextRepaired = payload.repaired !== false;
 
   const updates = nextRepaired
-    ? { repaired: true, repaired_at: new Date().toISOString() }
+    ? {
+        status: 'Reparado',
+        repaired: true,
+        repaired_at: new Date().toISOString(),
+      }
     : {
+        status: 'Visible',
         repaired: false,
         repaired_at: null,
         repair_rating_avg: 0,
@@ -36,9 +51,7 @@ export async function POST(
     .from('reports')
     .update(updates)
     .eq('id', reportId)
-    .select(
-      'id, lat, lng, type, photo_url, created_at, angry_count, repaired, repaired_at, repair_rating_avg, repair_rating_count',
-    )
+    .select(REPORT_SELECT)
     .single();
 
   if (error) {

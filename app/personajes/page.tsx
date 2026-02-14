@@ -1,39 +1,59 @@
 const personajes = [
   {
-    name: 'El Presi',
+    name: '🏛️ El Presi',
     role: 'Autoridad principal',
     image: '/personajes/presi.svg',
     text:
-      'El Presi siempre está “al tanto” de lo que pasa en la ciudad. Le llegan todos los reportes importantes, los revisa con calma… y promete que pronto habrá solución. Pronto, muy pronto…',
+      'El Presi esta enterado de todo... o al menos eso dice. Aqui llegan los reportes, se revisan, se analizan y se prometen soluciones. Siempre habla de coordinacion, planeacion y seguimiento. Mientras tanto, la ciudad sigue reportando.',
   },
   {
-    name: 'El Poli',
+    name: '🚓 El Poli',
     role: 'Seguridad y orden',
     image: '/personajes/poli.svg',
     text:
-      'El Poli recibe los reportes que afectan el tránsito y la seguridad. Siempre anda patrullando, levantando informes y tratando de que los baches no causen accidentes. Aunque a veces… anda en otra llamada.',
+      'El Poli patrulla las calles donde aparecen los reportes. Ve lo que pasa, levanta nota y trata de que nadie salga volando en un bacheson. No arregla... pero si sabe donde estan. Y creeme, los ha visto todos.',
   },
   {
-    name: 'El Doc',
+    name: '🩺 El Doc',
     role: 'Evaluador de riesgos',
-    image: '/personajes/doc.svg',
+    image: '/personajes/pdoc_thumb.svg',
     text:
-      'El Doc analiza qué tan grave está la salud municipal. Mide el daño, revisa el peligro. Si él se preocupa… es por algo.',
+      'El Doc mide el impacto en la salud urbana. Suspension tronada, llantas dañadas, estres ciudadano... todo entra en su diagnostico. No receta medicinas, receta evidencia. Si el Doc aparece, es porque el problema ya dolio.',
   },
   {
-    name: 'La Maña',
+    name: '🛠️ La Maña',
     role: 'Soluciones “alternativas”',
     image: '/personajes/mana.svg',
-    text:
-      'La Maña siempre aparece cuando nadie más responde. A veces tapa, a veces parcha, a veces solo deja el recuerdo. No es oficial… pero ahí anda.',
+    text: 'No es oficial... pero ahi esta.',
   },
-];
-
-const comingSoon = [
-  { name: 'El de Obras' },
-  { name: 'El del Alumbrado' },
-  { name: 'El del Agua' },
-  { name: 'El Gestor' },
+  {
+    name: '💧 El del Agua',
+    role: 'Infraestructura hidráulica',
+    image: '/personajes/pagua_thumb.svg',
+    text:
+      'El del Agua sabe que muchos problemas vienen desde abajo. Fugas, humedad, tuberias dañadas... lo que no se ve tambien rompe la calle. Cuando un reporte tiene que ver con agua, el entra a revisar que esta pasando bajo tierra.',
+  },
+  {
+    name: '🧹 El de los Servicios',
+    role: 'Imagen urbana y mantenimiento',
+    image: '/personajes/pservicios_thumb.svg',
+    text:
+      'El de los Servicios observa el dia a dia de la ciudad. Calles, limpieza, desgaste, lo cotidiano que tambien afecta como vivimos los espacios. Porque una ciudad funcional tambien necesita mantenimiento constante.',
+  },
+  {
+    name: '🚧 El de la Obra',
+    role: 'Ejecución y reparación',
+    image: '/personajes/pobras_thumb.svg',
+    text:
+      'El de la Obra es quien entra cuando toca arreglar. Maquinaria, material, intervencion directa. Convierte el reporte en trabajo real. Aqui es donde el mapa deja de ser señalamiento y se vuelve accion.',
+  },
+  {
+    name: '📐 El de Infraestructura',
+    role: 'Planeación técnica',
+    image: '/personajes/pinfraestructura_thumb.svg',
+    text:
+      'El de Infraestructura ve la ciudad completa, no solo el bache. Analiza como se construye, como se desgasta y como deberia mantenerse mejor. Porque arreglar hoy esta bien, pero planear evita repetir mañana.',
+  },
 ];
 
 export default function PersonajesPage() {
@@ -99,35 +119,6 @@ export default function PersonajesPage() {
           ))}
         </section>
 
-        <section className="mt-14">
-          <div className="flex items-center gap-3">
-            <span className="text-xl">🔜</span>
-            <h2 className="text-2xl font-semibold">
-              Próximos personajes
-            </h2>
-          </div>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            El universo Bachejoa sigue creciendo. Muy pronto llegarán nuevos
-            personajes para más tipos de reportes.
-          </p>
-
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {comingSoon.map((item) => (
-              <article
-                key={item.name}
-                className="rounded-3xl border border-dashed border-slate-300 bg-white/70 px-5 py-6 text-center"
-              >
-                <div className="mx-auto h-16 w-16 rounded-full bg-slate-200" />
-                <h3 className="mt-4 text-sm font-semibold text-slate-700">
-                  {item.name}
-                </h3>
-                <span className="mt-2 inline-flex rounded-full bg-slate-200 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600">
-                  Coming Soon
-                </span>
-              </article>
-            ))}
-          </div>
-        </section>
       </div>
     </main>
   );

@@ -1,4 +1,9 @@
 import { NextResponse } from 'next/server';
+import { getSessionUser } from '../../../lib/auth';
+import {
+  normalizeReportInput,
+  REPORT_SELECT,
+} from '../../../lib/reporting';
 import { supabaseBucket, supabaseServer } from '../../../lib/supabase/server';
 import { getClientFingerprint, rateLimit } from '../../../lib/security';
 
@@ -18,9 +23,7 @@ export async function GET(request: Request) {
 
   let query = supabaseServer
     .from('reports')
-    .select(
-      'id, lat, lng, type, photo_url, created_at, angry_count, repaired, repaired_at, repair_rating_avg, repair_rating_count',
-    )
+    .select(REPORT_SELECT)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(limit);
@@ -62,11 +65,48 @@ export async function POST(request: Request) {
     const lat = Number(formData.get('lat'));
     const lng = Number(formData.get('lng'));
     const type = String(formData.get('type') ?? '');
+    const category = String(formData.get('category') ?? '');
+    const subcategory = String(formData.get('subcategory') ?? '');
+    const status = String(formData.get('status') ?? '');
     const providedPhotoUrl = String(formData.get('photo_url') ?? '').trim();
     const photo = formData.get('photo') as File | null;
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !type) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return NextResponse.json({ error: 'Invalid payload.' }, { status: 400 });
+    }
+    const normalized = normalizeReportInput({
+      category,
+      subcategory,
+      type,
+      status,
+    });
+    if (!normalized) {
+      return NextResponse.json(
+        { error: 'Categoría o subtipo inválido.' },
+        { status: 400 },
+      );
+    }
+
+    const { fingerprint } = getClientFingerprint(request);
+    const user = await getSessionUser(request);
+    if (!user) {
+      const { count, error: countError } = await supabaseServer
+        .from('reports')
+        .select('id', { head: true, count: 'exact' })
+        .eq('reporter_fingerprint', fingerprint);
+
+      if (countError) {
+        return NextResponse.json({ error: countError.message }, { status: 500 });
+      }
+      if ((count ?? 0) >= 5) {
+        return NextResponse.json(
+          {
+            error: 'Para seguir participando, crea una cuenta',
+            code: 'ANON_LIMIT_REACHED',
+          },
+          { status: 403 },
+        );
+      }
     }
 
     let photoUrl: string | null = providedPhotoUrl || null;
@@ -111,10 +151,22 @@ export async function POST(request: Request) {
 
     const { data, error } = await supabaseServer
       .from('reports')
-      .insert({ lat, lng, type, photo_url: photoUrl, angry_count: 0 })
-      .select(
-        'id, lat, lng, type, photo_url, created_at, angry_count, repaired, repaired_at, repair_rating_avg, repair_rating_count',
-      )
+      .insert({
+        lat,
+        lng,
+        type: normalized.type,
+        category: normalized.category,
+        subcategory: normalized.subcategory,
+        status: normalized.status,
+        photo_url: photoUrl,
+        angry_count: 0,
+        repaired: normalized.status === 'Reparado',
+        repaired_at:
+          normalized.status === 'Reparado' ? new Date().toISOString() : null,
+        user_id: user?.id ?? null,
+        reporter_fingerprint: user ? null : fingerprint,
+      })
+      .select(REPORT_SELECT)
       .single();
 
     if (error) {

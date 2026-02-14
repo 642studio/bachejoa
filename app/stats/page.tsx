@@ -1,12 +1,20 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import {
+  REPORT_CATEGORIES,
+  REPORT_STATUS_STAGES,
+  type ReportStatus,
+} from '../../lib/reporting';
 
 type ReportRecord = {
   id: string;
   lat: number;
   lng: number;
   type: string;
+  category?: string | null;
+  subcategory?: string | null;
+  status?: ReportStatus | null;
   photo_url: string | null;
   created_at: string;
   angry_count: number | null;
@@ -15,13 +23,6 @@ type ReportRecord = {
   repair_rating_avg?: number | null;
   repair_rating_count?: number | null;
 };
-
-const bacheTypes = [
-  'Pequeña grieta',
-  'Bache',
-  'Bachesón',
-  'Reparación inconclusa',
-];
 
 export default function StatsPage() {
   const [reports, setReports] = useState<ReportRecord[]>([]);
@@ -74,10 +75,40 @@ export default function StatsPage() {
 
   const totals = useMemo(() => {
     const counts = new Map<string, number>();
-    bacheTypes.forEach((type) => counts.set(type, 0));
+    REPORT_CATEGORIES.forEach((category) => counts.set(category.name, 0));
     for (const report of reports) {
-      const current = counts.get(report.type) ?? 0;
-      counts.set(report.type, current + 1);
+      const key = report.category ?? 'Baches';
+      const current = counts.get(key) ?? 0;
+      counts.set(key, current + 1);
+    }
+    return counts;
+  }, [reports]);
+
+  const subtypeTotals = useMemo(() => {
+    const counts = new Map<string, number>();
+    REPORT_CATEGORIES.forEach((category) => {
+      category.subcategories.forEach((subcategory) => {
+        counts.set(`${category.name}::${subcategory}`, 0);
+      });
+    });
+    for (const report of reports) {
+      const category = report.category ?? 'Baches';
+      const subtype = report.subcategory ?? report.type ?? '';
+      const key = `${category}::${subtype}`;
+      if (!counts.has(key)) {
+        counts.set(key, 0);
+      }
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [reports]);
+
+  const statusTotals = useMemo(() => {
+    const counts = new Map<string, number>();
+    REPORT_STATUS_STAGES.forEach((status) => counts.set(status, 0));
+    for (const report of reports) {
+      const status = report.status ?? (report.repaired ? 'Reparado' : 'Visible');
+      counts.set(status, (counts.get(status) ?? 0) + 1);
     }
     return counts;
   }, [reports]);
@@ -94,7 +125,9 @@ export default function StatsPage() {
     0,
   );
   const withPhoto = reports.filter((report) => report.photo_url).length;
-  const repairedTotal = reports.filter((report) => report.repaired).length;
+  const repairedTotal = reports.filter(
+    (report) => report.status === 'Reparado' || report.repaired,
+  ).length;
   const repairedRated = reports.filter(
     (report) => (report.repair_rating_count ?? 0) > 0,
   ).length;
@@ -121,8 +154,14 @@ export default function StatsPage() {
   }, [reports]);
 
   const latestWithPhoto = useMemo(() => {
+    const isRenderablePhoto = (url: string | null | undefined) => {
+      if (!url) return false;
+      const clean = url.split('?')[0]?.toLowerCase() ?? '';
+      return !clean.endsWith('.heic') && !clean.endsWith('.heif');
+    };
+
     return reports
-      .filter((report) => report.photo_url)
+      .filter((report) => isRenderablePhoto(report.photo_url))
       .sort(
         (a, b) =>
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
@@ -133,8 +172,15 @@ export default function StatsPage() {
   return (
     <main className="reportes-root min-h-screen text-slate-900">
       <div className="mx-auto max-w-6xl px-6 py-12">
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div className="w-full text-center">
+        <header className="grid gap-5 sm:grid-cols-[auto_1fr_auto] sm:items-center">
+          <a
+            className="justify-self-start rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-lg"
+            href="/map"
+          >
+            Volver al mapa
+          </a>
+
+          <div className="text-center">
             <img
               alt="Bachejoa Map"
               className="mx-auto h-12 w-auto"
@@ -143,19 +189,15 @@ export default function StatsPage() {
             <p className="mt-2 text-xs uppercase tracking-[0.3em] text-slate-500">
               Dashboard ciudadano
             </p>
-            <h1 className="text-3xl font-[var(--font-display)] text-slate-900">
+            <h1 className="mt-1 text-3xl font-[var(--font-display)] text-slate-900">
               Estadísticas de Bachejoa
             </h1>
             <p className="mt-2 text-sm text-slate-600">
-              Un vistazo rápido a los reportes y su impacto.
+              Civic Data Platform · Plataforma ciudadana de reportes urbanos.
             </p>
           </div>
-          <a
-            className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-lg"
-            href="/map"
-          >
-            Volver al mapa
-          </a>
+
+          <div className="hidden sm:block" />
         </header>
 
         <section className="mt-10 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
@@ -195,15 +237,41 @@ export default function StatsPage() {
                 </p>
               </div>
             </div>
+            <div className="mt-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                Total por categoría
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                {REPORT_CATEGORIES.map((category) => (
+                  <div
+                    key={category.name}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center"
+                  >
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">
+                      {category.name}
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-900">
+                      {isLoading ? '...' : totals.get(category.name) ?? 0}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="rounded-[32px] bg-sky-200 px-6 py-6 shadow-[0_20px_40px_rgba(15,23,42,0.15)]">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="max-w-xl">
-                <h3 className="text-lg font-semibold">El Presi reporta</h3>
+                <h3 className="text-lg font-semibold">Aviso de actualización</h3>
                 <p className="mt-2 text-sm text-slate-700">
-                  “Aquí está el pulso de la ciudad. Entre más reportes, más presión
-                  para arreglar lo que duele.”
+                  Bachejoa ahora funciona como Civic Data Platform: agregamos
+                  nuevas categorías, etapas de seguimiento, 
+                  filtros avanzados en el mapa y cuentas de
+                  usuario con perfil.
+                </p>
+                <p className="mt-2 text-sm text-slate-700">
+                  Si encuentras una incidencia, repórtala con ubicación precisa
+                  y foto para acelerar verificación y atención.
                 </p>
               </div>
               <img
@@ -217,7 +285,7 @@ export default function StatsPage() {
 
         <section className="mt-10 rounded-[32px] bg-white/90 p-6 shadow-[0_20px_40px_rgba(15,23,42,0.12)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">Top 5 baches más odiados</h2>
+            <h2 className="text-lg font-semibold">Top 5 reportes más votados</h2>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
               Basado en “Me enojas”
             </p>
@@ -273,18 +341,64 @@ export default function StatsPage() {
         </section>
 
         <section className="mt-10 rounded-[32px] bg-white/90 p-6 shadow-[0_20px_40px_rgba(15,23,42,0.12)]">
-          <h2 className="text-lg font-semibold">Por tipo de reporte</h2>
+          <h2 className="text-lg font-semibold">Por categoría</h2>
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {bacheTypes.map((type) => (
+            {REPORT_CATEGORIES.map((type) => (
               <div
-                key={type}
+                key={type.name}
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-center"
               >
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                  {type}
+                  {type.name}
                 </p>
                 <p className="mt-3 text-3xl font-semibold text-slate-900">
-                  {isLoading ? '...' : totals.get(type) ?? 0}
+                  {isLoading ? '...' : totals.get(type.name) ?? 0}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-10 rounded-[32px] bg-white/90 p-6 shadow-[0_20px_40px_rgba(15,23,42,0.12)]">
+          <h2 className="text-lg font-semibold">Por tipo de reporte</h2>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {REPORT_CATEGORIES.map((category) =>
+              category.subcategories.map((subcategory) => {
+                const key = `${category.name}::${subcategory}`;
+                return (
+                  <div
+                    key={key}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
+                  >
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                      {category.name}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">
+                      {subcategory}
+                    </p>
+                    <p className="mt-3 text-3xl font-semibold text-slate-900">
+                      {isLoading ? '...' : subtypeTotals.get(key) ?? 0}
+                    </p>
+                  </div>
+                );
+              }),
+            )}
+          </div>
+        </section>
+
+        <section className="mt-10 rounded-[32px] bg-white/90 p-6 shadow-[0_20px_40px_rgba(15,23,42,0.12)]">
+          <h2 className="text-lg font-semibold">Etapas del flujo</h2>
+          <div className="mt-5 grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            {REPORT_STATUS_STAGES.map((status) => (
+              <div
+                key={status}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-center"
+              >
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                  {status}
+                </p>
+                <p className="mt-3 text-3xl font-semibold text-slate-900">
+                  {isLoading ? '...' : statusTotals.get(status) ?? 0}
                 </p>
               </div>
             ))}

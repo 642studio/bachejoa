@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getSessionUser, isPlatformAdmin } from '../../../../lib/auth';
 import { supabaseServer } from '../../../../lib/supabase/server';
 import { rateLimit } from '../../../../lib/security';
 
@@ -16,6 +17,14 @@ export async function DELETE(
   const rate = await rateLimit(request, 'reports:delete', 6, 60);
   if (!rate.allowed) {
     return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
+  }
+
+  const user = await getSessionUser(request);
+  if (!isPlatformAdmin(user)) {
+    return NextResponse.json(
+      { error: 'Solo el admin puede eliminar reportes.' },
+      { status: 403 },
+    );
   }
 
   const { error } = await supabaseServer

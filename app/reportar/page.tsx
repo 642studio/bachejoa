@@ -18,7 +18,7 @@ export default async function ReportarPage({
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
-              Bachejoa Map
+              Civic Data Platform
             </p>
             <h1 className="text-3xl font-[var(--font-display)] text-slate-900">
               Reportar {tipo}

@@ -92,7 +92,15 @@ export default function Home() {
           >
             Ingresar
           </button>
-          <p className="text-xs text-slate-700/80">pwd by 642</p>
+          <div className="flex flex-col items-center gap-1 text-xs text-slate-700/80">
+            <span>pwd</span>
+            <span>by</span>
+            <img
+              alt="642"
+              className="h-10 w-auto object-contain"
+              src="/642logo.png"
+            />
+          </div>
         </div>
       </div>
     </main>
