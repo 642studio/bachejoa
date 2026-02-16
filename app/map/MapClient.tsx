@@ -440,6 +440,9 @@ export default function MapClient() {
   const [authError, setAuthError] = useState('');
   const [authNotice, setAuthNotice] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [contactLoading, setContactLoading] = useState(false);
+  const [contactNotice, setContactNotice] = useState('');
+  const [contactError, setContactError] = useState('');
   const [currentUser, setCurrentUser] = useState<{
     id: string;
     username: string;
@@ -2147,6 +2150,8 @@ export default function MapClient() {
                 className="mt-3 grid gap-3"
                 onSubmit={async (event) => {
                   event.preventDefault();
+                  setContactNotice('');
+                  setContactError('');
                   const form = event.currentTarget;
                   const formData = new FormData(form);
                   const payload = {
@@ -2155,6 +2160,7 @@ export default function MapClient() {
                     topic: String(formData.get('topic') ?? ''),
                     message: String(formData.get('message') ?? ''),
                   };
+                  setContactLoading(true);
                   try {
                     const res = await fetch('/api/contact', {
                       method: 'POST',
@@ -2163,12 +2169,21 @@ export default function MapClient() {
                     });
                     if (res.ok) {
                       form.reset();
-                      alert('Gracias, te contactaremos pronto.');
+                      setContactNotice(
+                        'Datos enviados. Ya se reflejan en contact requests.',
+                      );
                     } else {
-                      alert('No se pudo enviar. Intenta de nuevo.');
+                      const data = (await res.json().catch(() => ({}))) as {
+                        error?: string;
+                      };
+                      setContactError(
+                        data.error ?? 'No se pudo enviar. Intenta de nuevo.',
+                      );
                     }
                   } catch {
-                    alert('No se pudo enviar. Intenta de nuevo.');
+                    setContactError('No se pudo enviar. Intenta de nuevo.');
+                  } finally {
+                    setContactLoading(false);
                   }
                 }}
               >
@@ -2217,10 +2232,27 @@ export default function MapClient() {
                 </div>
                 <button
                   className="w-full rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+                  disabled={contactLoading}
                   type="submit"
                 >
-                  Enviar
+                  {contactLoading ? 'Enviando...' : 'Enviar'}
                 </button>
+                {contactNotice ? (
+                  <p className="text-xs font-semibold text-emerald-600">
+                    {contactNotice}
+                  </p>
+                ) : null}
+                {contactError ? (
+                  <p className="text-xs font-semibold text-rose-600">
+                    {contactError}
+                  </p>
+                ) : null}
+                <a
+                  className="text-xs font-semibold text-slate-600 underline decoration-slate-300 underline-offset-2"
+                  href="/admin"
+                >
+                  Ver bandeja de contact requests
+                </a>
               </form>
             </div>
             <button
