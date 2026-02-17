@@ -153,3 +153,43 @@ create table if not exists public.contact_requests (
 
 create index if not exists contact_requests_created_at_idx
   on public.contact_requests (created_at desc);
+
+create table if not exists public.official_accounts (
+  id uuid primary key default gen_random_uuid(),
+  username text not null unique,
+  full_name text not null,
+  email text,
+  area text,
+  categories text[] not null default '{}',
+  active boolean not null default true,
+  password_hash text not null,
+  created_at timestamptz not null default now(),
+  last_login_at timestamptz
+);
+
+create table if not exists public.official_sessions (
+  id uuid primary key default gen_random_uuid(),
+  official_id uuid not null references public.official_accounts (id) on delete cascade,
+  token_hash text not null unique,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null
+);
+
+create index if not exists official_accounts_username_idx
+  on public.official_accounts (username);
+create index if not exists official_accounts_active_idx
+  on public.official_accounts (active);
+create index if not exists official_sessions_official_id_idx
+  on public.official_sessions (official_id);
+create index if not exists official_sessions_expires_at_idx
+  on public.official_sessions (expires_at);
+
+alter table public.contact_requests enable row level security;
+
+drop policy if exists contact_requests_service_role_all on public.contact_requests;
+create policy contact_requests_service_role_all
+on public.contact_requests
+for all
+to service_role
+using (true)
+with check (true);
