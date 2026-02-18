@@ -161,11 +161,14 @@ create table if not exists public.official_accounts (
   email text,
   area text,
   categories text[] not null default '{}',
+  zones text[] not null default '{}',
   active boolean not null default true,
   password_hash text not null,
   created_at timestamptz not null default now(),
   last_login_at timestamptz
 );
+
+alter table public.official_accounts add column if not exists zones text[] not null default '{}';
 
 create table if not exists public.official_sessions (
   id uuid primary key default gen_random_uuid(),
@@ -179,17 +182,66 @@ create index if not exists official_accounts_username_idx
   on public.official_accounts (username);
 create index if not exists official_accounts_active_idx
   on public.official_accounts (active);
+create index if not exists official_accounts_zones_gin_idx
+  on public.official_accounts using gin (zones);
 create index if not exists official_sessions_official_id_idx
   on public.official_sessions (official_id);
 create index if not exists official_sessions_expires_at_idx
   on public.official_sessions (expires_at);
 
-alter table public.contact_requests enable row level security;
+create table if not exists public.zones (
+  id text primary key,
+  name text not null,
+  lat_min double precision not null,
+  lat_max double precision not null,
+  lng_min double precision not null,
+  lng_max double precision not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
 
-drop policy if exists contact_requests_service_role_all on public.contact_requests;
-create policy contact_requests_service_role_all
-on public.contact_requests
-for all
-to service_role
-using (true)
-with check (true);
+insert into public.zones (id, name, lat_min, lat_max, lng_min, lng_max)
+values
+  ('centro', 'Centro', 27.0705, 27.091, -109.457, -109.421),
+  ('norte', 'Norte', 27.091, 27.125, -109.472, -109.404),
+  ('sur', 'Sur', 27.035, 27.0705, -109.474, -109.404),
+  ('poniente', 'Poniente', 27.058, 27.105, -109.52, -109.457),
+  ('oriente', 'Oriente', 27.058, 27.105, -109.421, -109.36)
+on conflict (id) do update set
+  name = excluded.name,
+  lat_min = excluded.lat_min,
+  lat_max = excluded.lat_max,
+  lng_min = excluded.lng_min,
+  lng_max = excluded.lng_max;
+
+do $$
+declare
+  table_name text;
+  policy_name text;
+begin
+  foreach table_name in array array[
+    'contact_requests',
+    'reports',
+    'report_angry_votes',
+    'report_repair_ratings',
+    'rate_limits',
+    'users',
+    'user_sessions',
+    'official_accounts',
+    'official_sessions'
+  ]
+  loop
+    if to_regclass(format('public.%I', table_name)) is not null then
+      execute format('alter table public.%I enable row level security', table_name);
+
+      policy_name := format('%s_service_role_all', table_name);
+      execute format('drop policy if exists %I on public.%I', policy_name, table_name);
+      execute format(
+        'create policy %I on public.%I for all to service_role using (true) with check (true)',
+        policy_name,
+        table_name
+      );
+    end if;
+  end loop;
+end
+$$;
