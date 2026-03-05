@@ -1,4 +1,6 @@
 import './globals.css';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import type { Metadata } from 'next';
 import {
   Luckiest_Guy,
   Space_Grotesk,
@@ -23,7 +25,18 @@ const monoFont = IBM_Plex_Mono({
   weight: ['400', '500', '600'],
 });
 
-export const metadata = {
+function resolveMetadataBase() {
+  const configuredUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (!configuredUrl) return new URL('http://localhost:3000');
+  try {
+    return new URL(configuredUrl);
+  } catch {
+    return new URL(`https://${configuredUrl}`);
+  }
+}
+
+export const metadata: Metadata = {
+  metadataBase: resolveMetadataBase(),
   title: 'Bachejoa Civic Data Platform',
   description:
     'Plataforma ciudadana de reportes urbanos en Navojoa, Sonora.',

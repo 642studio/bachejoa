@@ -3,20 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AudioControls from '../components/AudioControls';
-import { MarkerClusterer } from '@googlemaps/markerclusterer';
+import mapboxgl from 'mapbox-gl';
 import {
   REPORT_CATEGORIES,
   REPORT_STATUS_STAGES,
   type ReportStatus,
 } from '../../lib/reporting';
-
-declare global {
-  interface Window {
-    google: any;
-  }
-}
-
-declare const google: any;
+import { CITY_ZONES, resolveZoneByCoordinates } from '../../lib/zones';
 
 const issueTypes = REPORT_CATEGORIES.map((category) => ({
   category: category.name,
@@ -69,6 +62,41 @@ type ReportRecord = {
   repaired_at?: string | null;
   repair_rating_avg?: number | null;
   repair_rating_count?: number | null;
+  zone_id?: string | null;
+  zone_name?: string | null;
+};
+
+type MarkerVisual =
+  | {
+      kind: 'image';
+      url: string;
+      width: number;
+      height: number;
+      anchor: 'bottom' | 'center';
+    }
+  | {
+      kind: 'dot';
+      color: string;
+      size: number;
+      fillOpacity?: number;
+      strokeColor?: string;
+      strokeOpacity?: number;
+      strokeWidth?: number;
+      anchor?: 'center' | 'bottom';
+    };
+
+type MarkerHandle = {
+  marker: mapboxgl.Marker;
+  element: HTMLDivElement;
+  setIcon: (icon: MarkerVisual) => void;
+  setPosition: (position: LatLngLiteral) => void;
+  setMap: (map: mapboxgl.Map | null) => void;
+};
+
+type ReportMarkerHandle = MarkerHandle & {
+  reportId: string;
+  reportData: ReportRecord;
+  triggerClick: () => void;
 };
 
 type AccountReport = {
@@ -181,32 +209,40 @@ const GAMIFICATION_MEDALS = [
 ];
 
 const defaultCenter: LatLngLiteral = { lat: 27.0706, lng: -109.4437 };
-const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
-
-let googleMapsPromise: Promise<void> | null = null;
-
-function loadGoogleMaps() {
-  if (typeof window === 'undefined') return Promise.resolve();
-  if (window.google?.maps) return Promise.resolve();
-  if (!googleMapsPromise) {
-    googleMapsPromise = new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`;
-      script.async = true;
-      script.defer = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject();
-      document.head.appendChild(script);
-    });
-  }
-  return googleMapsPromise;
-}
+const MAPBOX_ACCESS_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN ?? '';
+const CLUSTER_GRID_SIZE_PX = 96;
+const CLUSTER_ZOOM_THRESHOLD = 15;
+const MAPBOX_RASTER_STYLE: mapboxgl.Style = {
+  version: 8,
+  sources: {
+    'mapbox-raster': {
+      type: 'raster',
+      tiles: [
+        `https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}?access_token=${MAPBOX_ACCESS_TOKEN}`,
+      ],
+      tileSize: 256,
+      attribution: '© Mapbox © OpenStreetMap',
+      maxzoom: 22,
+    },
+  },
+  layers: [
+    {
+      id: 'mapbox-raster-layer',
+      type: 'raster',
+      source: 'mapbox-raster',
+      minzoom: 0,
+      maxzoom: 22,
+    },
+  ],
+};
 
 function createMarkerIcon(type: { name: string; icon: string }) {
   return {
+    kind: 'image' as const,
     url: type.icon,
-    scaledSize: new google.maps.Size(52, 52),
-    anchor: new google.maps.Point(26, 52),
+    width: 52,
+    height: 52,
+    anchor: 'bottom' as const,
   };
 }
 
@@ -252,21 +288,60 @@ function createRepairedIcon() {
     </svg>`,
   );
   return {
+    kind: 'image' as const,
     url: `data:image/svg+xml;charset=UTF-8,${svg}`,
-    scaledSize: new google.maps.Size(52, 52),
-    anchor: new google.maps.Point(26, 52),
+    width: 52,
+    height: 52,
+    anchor: 'bottom' as const,
   };
 }
 
 function createDotIcon(color: string) {
   return {
-    path: google.maps.SymbolPath.CIRCLE,
-    fillColor: color,
-    fillOpacity: 0.9,
+    kind: 'dot' as const,
+    color,
+    fillOpacity: 0.78,
     strokeColor: '#ffffff',
-    strokeOpacity: 1,
-    strokeWeight: 2,
-    scale: 6,
+    strokeOpacity: 0.88,
+    strokeWidth: 1.6,
+    size: 10,
+    anchor: 'center' as const,
+  };
+}
+
+function formatClusterCount(count: number) {
+  if (count >= 1000) {
+    const value = count >= 10000 ? (count / 1000).toFixed(0) : (count / 1000).toFixed(1);
+    return `${value.replace(/\.0$/, '')}k`;
+  }
+  return String(count);
+}
+
+function createClusterIcon(count: number): MarkerVisual {
+  const size = Math.round(Math.min(42, 24 + Math.log2(count + 1) * 3));
+  const label = formatClusterCount(count);
+  const fontSize = label.length >= 4 ? 10 : 11;
+  const tone =
+    count >= 180 ? '#ef4444' : count >= 60 ? '#f59e0b' : count >= 20 ? '#14b8a6' : '#38bdf8';
+
+  const radius = size / 2 - 1.5;
+  const svg = encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      <defs>
+        <filter id="clusterShadow" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#0f172a" flood-opacity="0.24"/>
+        </filter>
+      </defs>
+      <circle cx="${size / 2}" cy="${size / 2}" r="${radius}" fill="${tone}" fill-opacity="0.78" stroke="rgba(255,255,255,0.36)" stroke-width="1.2" filter="url(#clusterShadow)" />
+      <text x="${size / 2}" y="${size / 2 + 3.5}" text-anchor="middle" font-size="${fontSize}" font-family="'Space Grotesk', Arial, sans-serif" font-weight="700" fill="#ffffff">${label}</text>
+    </svg>`,
+  );
+  return {
+    kind: 'image',
+    url: `data:image/svg+xml;charset=UTF-8,${svg}`,
+    width: size,
+    height: size,
+    anchor: 'center',
   };
 }
 
@@ -299,12 +374,98 @@ function createGlowIcon(
   color: string,
 ) {
   if (!type.icon) {
-    return createDotIcon(color);
+    return {
+      ...createDotIcon(color),
+      size: 18,
+    };
   }
   return {
+    kind: 'image' as const,
     url: type.icon,
-    scaledSize: new google.maps.Size(60, 60),
-    anchor: new google.maps.Point(30, 60),
+    width: 60,
+    height: 60,
+    anchor: 'bottom' as const,
+  };
+}
+
+function applyMarkerVisual(element: HTMLDivElement, icon: MarkerVisual) {
+  element.innerHTML = '';
+  element.style.width = '';
+  element.style.height = '';
+  element.style.backgroundImage = '';
+  element.style.backgroundColor = '';
+  element.style.border = '';
+  element.style.borderRadius = '';
+  element.style.opacity = '';
+  element.style.transform = '';
+  element.style.backgroundSize = '';
+  element.style.backgroundRepeat = '';
+  element.style.backgroundPosition = '';
+  element.style.boxSizing = 'border-box';
+
+  if (icon.kind === 'image') {
+    element.style.width = `${icon.width}px`;
+    element.style.height = `${icon.height}px`;
+    element.style.backgroundImage = `url("${icon.url}")`;
+    element.style.backgroundSize = 'contain';
+    element.style.backgroundRepeat = 'no-repeat';
+    element.style.backgroundPosition = 'center';
+    return;
+  }
+
+  element.style.width = `${icon.size}px`;
+  element.style.height = `${icon.size}px`;
+  element.style.borderRadius = '999px';
+  element.style.backgroundColor = icon.color;
+  element.style.opacity = String(icon.fillOpacity ?? 1);
+  element.style.border = `${icon.strokeWidth ?? 0}px solid ${icon.strokeColor ?? 'transparent'}`;
+}
+
+function createMarkerHandle({
+  map,
+  position,
+  icon,
+  draggable = false,
+  clickable = true,
+  zIndex = 2,
+}: {
+  map: mapboxgl.Map;
+  position: LatLngLiteral;
+  icon: MarkerVisual;
+  draggable?: boolean;
+  clickable?: boolean;
+  zIndex?: number;
+}): MarkerHandle {
+  const element = document.createElement('div');
+  element.style.cursor = clickable ? 'pointer' : 'default';
+  element.style.pointerEvents = clickable ? 'auto' : 'none';
+  element.style.zIndex = String(zIndex);
+  applyMarkerVisual(element, icon);
+
+  const marker = new mapboxgl.Marker({
+    element,
+    draggable,
+    anchor: icon.kind === 'image' ? icon.anchor : icon.anchor ?? 'center',
+  })
+    .setLngLat([position.lng, position.lat])
+    .addTo(map);
+
+  return {
+    marker,
+    element,
+    setIcon(nextIcon: MarkerVisual) {
+      applyMarkerVisual(element, nextIcon);
+    },
+    setPosition(nextPosition: LatLngLiteral) {
+      marker.setLngLat([nextPosition.lng, nextPosition.lat]);
+    },
+    setMap(nextMap: mapboxgl.Map | null) {
+      if (!nextMap) {
+        marker.remove();
+        return;
+      }
+      marker.addTo(nextMap);
+    },
   };
 }
 
@@ -392,12 +553,12 @@ async function ensureWebCompatiblePhoto(file: File) {
 
 export default function MapClient() {
   const mapRef = useRef<HTMLDivElement | null>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const tempMarkerRef = useRef<any>(null);
-  const tempGlowRef = useRef<any>(null);
-  const savedMarkersRef = useRef<any[]>([]);
-  const infoWindowRef = useRef<any>(null);
-  const clustererRef = useRef<MarkerClusterer | null>(null);
+  const mapInstanceRef = useRef<mapboxgl.Map | null>(null);
+  const tempMarkerRef = useRef<MarkerHandle | null>(null);
+  const tempGlowRef = useRef<MarkerHandle | null>(null);
+  const savedMarkersRef = useRef<ReportMarkerHandle[]>([]);
+  const clusterMarkersRef = useRef<MarkerHandle[]>([]);
+  const infoWindowRef = useRef<mapboxgl.Popup | null>(null);
   const focusedRef = useRef(false);
   const [newPin, setNewPin] = useState<LatLngLiteral | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -415,7 +576,11 @@ export default function MapClient() {
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<'all' | string>(
     'all',
   );
+  const [selectedZoneFilter, setSelectedZoneFilter] = useState<'all' | string>(
+    'all',
+  );
   const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoName, setPhotoName] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -477,6 +642,117 @@ export default function MapClient() {
     if (!currentUser) return false;
     return currentUser.role === 'admin';
   }, [currentUser]);
+
+  function clearClusterMarkers() {
+    clusterMarkersRef.current.forEach((marker) => marker.setMap(null));
+    clusterMarkersRef.current = [];
+  }
+
+  function setSavedMarkersVisible(visible: boolean) {
+    savedMarkersRef.current.forEach((marker) => {
+      marker.element.style.display = visible ? 'block' : 'none';
+    });
+  }
+
+  function refreshClusterOverlay() {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    const zoom = map.getZoom() ?? 0;
+    const shouldCluster = zoom < CLUSTER_ZOOM_THRESHOLD;
+    if (!shouldCluster) {
+      clearClusterMarkers();
+      setSavedMarkersVisible(true);
+      return;
+    }
+
+    clearClusterMarkers();
+    setSavedMarkersVisible(false);
+
+    const bounds = map.getBounds();
+    if (!bounds) return;
+
+    type ClusterBucket = {
+      reports: ReportRecord[];
+      sumLat: number;
+      sumLng: number;
+    };
+    const buckets = new Map<string, ClusterBucket>();
+
+    savedMarkersRef.current.forEach((marker) => {
+      const report = marker.reportData;
+      if (!bounds.contains([report.lng, report.lat])) return;
+      const point = map.project([report.lng, report.lat]);
+      const key = `${Math.floor(point.x / CLUSTER_GRID_SIZE_PX)}:${Math.floor(
+        point.y / CLUSTER_GRID_SIZE_PX,
+      )}`;
+      const bucket = buckets.get(key);
+      if (!bucket) {
+        buckets.set(key, {
+          reports: [report],
+          sumLat: report.lat,
+          sumLng: report.lng,
+        });
+        return;
+      }
+      bucket.reports.push(report);
+      bucket.sumLat += report.lat;
+      bucket.sumLng += report.lng;
+    });
+
+    buckets.forEach((bucket) => {
+      const count = bucket.reports.length;
+      const center = {
+        lat: bucket.sumLat / count,
+        lng: bucket.sumLng / count,
+      };
+
+      if (count === 1) {
+        const [single] = bucket.reports;
+        const color =
+          single.status === 'Reparado' || single.repaired
+            ? '#22c55e'
+            : resolveTypeColor(single.type, single.category);
+        const singleMarker = createMarkerHandle({
+          map,
+          position: center,
+          icon: createDotIcon(color),
+          zIndex: 4,
+        });
+        singleMarker.element.addEventListener('click', (event) => {
+          event.stopPropagation();
+          const saved = savedMarkersRef.current.find(
+            (item) => item.reportId === single.id,
+          );
+          if (!saved) return;
+          map.easeTo({
+            center: [single.lng, single.lat],
+            zoom: Math.max(16, map.getZoom() ?? 16),
+            duration: 400,
+          });
+          saved.triggerClick();
+        });
+        clusterMarkersRef.current.push(singleMarker);
+        return;
+      }
+
+      const clusterMarker = createMarkerHandle({
+        map,
+        position: center,
+        icon: createClusterIcon(count),
+        zIndex: 5,
+      });
+      clusterMarker.element.addEventListener('click', (event) => {
+        event.stopPropagation();
+        map.easeTo({
+          center: [center.lng, center.lat],
+          zoom: Math.min((map.getZoom() ?? 0) + 2, 18),
+          duration: 350,
+        });
+      });
+      clusterMarkersRef.current.push(clusterMarker);
+    });
+  }
 
   function pushProgressNotice(title: string, detail: string) {
     setProgressNotice({ title, detail });
@@ -643,6 +919,7 @@ export default function MapClient() {
     return reportList.filter((report) => {
       const category = report.category ?? 'Baches';
       const type = report.subcategory ?? report.type;
+      const zoneId = report.zone_id ?? 'fuera';
       if (
         selectedCategoryFilter !== 'all' &&
         normalizeFilterValue(category) !== normalizeFilterValue(selectedCategoryFilter)
@@ -655,12 +932,24 @@ export default function MapClient() {
       ) {
         return false;
       }
+      if (
+        selectedZoneFilter !== 'all' &&
+        normalizeFilterValue(zoneId) !== normalizeFilterValue(selectedZoneFilter)
+      ) {
+        return false;
+      }
       if (!matchesStage(report)) {
         return false;
       }
       return true;
     });
-  }, [reportList, selectedCategoryFilter, selectedStageFilter, selectedTypeFilter]);
+  }, [
+    reportList,
+    selectedCategoryFilter,
+    selectedStageFilter,
+    selectedTypeFilter,
+    selectedZoneFilter,
+  ]);
 
   const filterTypeOptions = useMemo<string[]>(() => {
     if (selectedCategoryFilter === 'all') {
@@ -676,69 +965,163 @@ export default function MapClient() {
   }, [selectedCategoryFilter]);
 
   useEffect(() => {
-    if (!GOOGLE_MAPS_API_KEY || !mapRef.current) return;
+    if (!MAPBOX_ACCESS_TOKEN || !mapRef.current) return;
+    if (!mapboxgl.supported()) {
+      setMapError('Tu navegador no soporta WebGL para Mapbox.');
+      return;
+    }
 
-    loadGoogleMaps()
-      .then(async () => {
-        const map = new google.maps.Map(mapRef.current as HTMLDivElement, {
-          center: defaultCenter,
-          zoom: 13,
-          disableDefaultUI: true,
-          zoomControl: true,
-          mapTypeControl: false,
-          fullscreenControl: false,
-          streetViewControl: false,
-          gestureHandling: 'greedy',
-        });
+    mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
+    const map = new mapboxgl.Map({
+      container: mapRef.current,
+      style: MAPBOX_RASTER_STYLE,
+      center: [defaultCenter.lng, defaultCenter.lat],
+      zoom: 13,
+      pitchWithRotate: false,
+    });
+    map.dragRotate.disable();
+    map.touchZoomRotate.disableRotation();
+    map.addControl(
+      new mapboxgl.NavigationControl({
+        showCompass: false,
+        showZoom: true,
+      }),
+      'bottom-right',
+    );
 
-        mapInstanceRef.current = map;
-        infoWindowRef.current = new google.maps.InfoWindow();
-        clustererRef.current = new MarkerClusterer({
-          map,
-          markers: [],
-        });
-        setMapReady(true);
-        setShowDetailedPins(map.getZoom() >= 16);
+    mapInstanceRef.current = map;
+    infoWindowRef.current = new mapboxgl.Popup({
+      closeButton: true,
+      closeOnClick: false,
+      maxWidth: '260px',
+      offset: 18,
+    });
 
-        map.addListener('click', (event: any) => {
-          if (!event.latLng) return;
-          const pos = event.latLng.toJSON();
-          setNewPin(pos);
-          setIsDialogOpen(true);
-        });
+    let didLoad = false;
+    let loadTimeout: number | null = null;
 
-        map.addListener('zoom_changed', () => {
-          const zoom = map.getZoom() ?? 0;
-          const detailed = zoom >= 16;
-          setShowDetailedPins(detailed);
-          savedMarkersRef.current.forEach((marker) => {
-            const report: ReportRecord | undefined = marker.reportData;
-            if (!report) return;
-            if (report.status === 'Reparado' || report.repaired) {
-              marker.setIcon(
-                detailed ? createRepairedIcon() : createDotIcon('#22c55e'),
-              );
-              return;
-            }
-            if (detailed) {
-              const type = resolveTypeIcon(report.type);
-              marker.setIcon(
-                type.icon
-                  ? createMarkerIcon({ name: type.name, icon: type.icon })
-                  : createDotIcon(resolveTypeColor(report.type, report.category)),
-              );
-            } else {
-              marker.setIcon(
-                createDotIcon(resolveTypeColor(report.type, report.category)),
-              );
-            }
-          });
-          clustererRef.current?.render();
-        });
-      })
-      .catch(() => {
-        setMapReady(false);
+    const handleMapReady = () => {
+      if (didLoad) return;
+      didLoad = true;
+      if (loadTimeout) {
+        window.clearTimeout(loadTimeout);
+        loadTimeout = null;
+      }
+      map.resize();
+      setMapReady(true);
+      setMapError(null);
+      setShowDetailedPins((map.getZoom() ?? 0) >= 16);
+      refreshClusterOverlay();
+    };
+
+    const handleMapClick = (event: mapboxgl.MapMouseEvent) => {
+      setNewPin({ lat: event.lngLat.lat, lng: event.lngLat.lng });
+      setIsDialogOpen(true);
+    };
+
+    const handleZoom = () => {
+      const zoom = map.getZoom() ?? 0;
+      const detailed = zoom >= 16;
+      setShowDetailedPins(detailed);
+      savedMarkersRef.current.forEach((marker) => {
+        const report: ReportRecord | undefined = marker.reportData;
+        if (!report) return;
+        if (report.status === 'Reparado' || report.repaired) {
+          marker.setIcon(detailed ? createRepairedIcon() : createDotIcon('#22c55e'));
+          return;
+        }
+        if (detailed) {
+          const type = resolveTypeIcon(report.type);
+          marker.setIcon(
+            type.icon
+              ? createMarkerIcon({ name: type.name, icon: type.icon })
+              : createDotIcon(resolveTypeColor(report.type, report.category)),
+          );
+        } else {
+          marker.setIcon(createDotIcon(resolveTypeColor(report.type, report.category)));
+        }
       });
+      refreshClusterOverlay();
+    };
+
+    const handleMoveEnd = () => {
+      refreshClusterOverlay();
+    };
+
+    const handleMapError = (event: { error?: unknown }) => {
+      const message =
+        event.error instanceof Error
+          ? event.error.message
+          : 'No se pudo cargar el estilo del mapa.';
+      const normalized = message.toLowerCase();
+      const isTokenError =
+        normalized.includes('access token') ||
+        normalized.includes('401') ||
+        normalized.includes('403') ||
+        normalized.includes('forbidden') ||
+        normalized.includes('unauthorized');
+      if (!didLoad || isTokenError) {
+        setMapError(message);
+      }
+      // Keep console trace for local debugging.
+      // eslint-disable-next-line no-console
+      console.error('Mapbox runtime error:', event.error ?? event);
+    };
+
+    loadTimeout = window.setTimeout(() => {
+      const appearsLoaded =
+        map.loaded() ||
+        map.isStyleLoaded() ||
+        Boolean(map.getContainer().querySelector('canvas.mapboxgl-canvas'));
+      if (!didLoad && !appearsLoaded) {
+        setMapError(
+          'El mapa no cargó. Revisa restricciones del token en Mapbox y la consola.',
+        );
+      }
+    }, 8000);
+
+    const resizeTimers = [
+      window.setTimeout(() => map.resize(), 0),
+      window.setTimeout(() => map.resize(), 350),
+      window.setTimeout(() => map.resize(), 1200),
+    ];
+    const handleWindowResize = () => {
+      map.resize();
+    };
+
+    map.on('load', handleMapReady);
+    map.on('idle', handleMapReady);
+    map.on('click', handleMapClick);
+    map.on('zoomend', handleZoom);
+    map.on('moveend', handleMoveEnd);
+    map.on('error', handleMapError);
+    window.addEventListener('resize', handleWindowResize);
+
+    return () => {
+      map.off('load', handleMapReady);
+      map.off('idle', handleMapReady);
+      map.off('click', handleMapClick);
+      map.off('zoomend', handleZoom);
+      map.off('moveend', handleMoveEnd);
+      map.off('error', handleMapError);
+      if (loadTimeout) {
+        window.clearTimeout(loadTimeout);
+      }
+      resizeTimers.forEach((timer) => window.clearTimeout(timer));
+      window.removeEventListener('resize', handleWindowResize);
+      infoWindowRef.current?.remove();
+      infoWindowRef.current = null;
+      clearClusterMarkers();
+      savedMarkersRef.current.forEach((marker) => marker.setMap(null));
+      savedMarkersRef.current = [];
+      tempMarkerRef.current?.setMap(null);
+      tempMarkerRef.current = null;
+      tempGlowRef.current?.setMap(null);
+      tempGlowRef.current = null;
+      map.remove();
+      mapInstanceRef.current = null;
+      setMapReady(false);
+    };
   }, []);
 
   useEffect(() => {
@@ -807,6 +1190,7 @@ export default function MapClient() {
     const subcategory = canonicalMap[rawType] ?? rawType;
     const status = (record.status ??
       (record.repaired ? 'Reparado' : 'Visible')) as ReportStatus;
+    const zone = resolveZoneByCoordinates(record.lat, record.lng);
     return {
       ...record,
       type: subcategory,
@@ -814,6 +1198,8 @@ export default function MapClient() {
       subcategory,
       status,
       repaired: status === 'Reparado',
+      zone_id: record.zone_id ?? zone.id,
+      zone_name: record.zone_name ?? zone.name,
     };
   }
 
@@ -857,10 +1243,11 @@ export default function MapClient() {
 
   useEffect(() => {
     if (!mapReady || !mapInstanceRef.current) return;
+    clearClusterMarkers();
     savedMarkersRef.current.forEach((marker) => marker.setMap(null));
     savedMarkersRef.current = [];
-    clustererRef.current?.clearMarkers();
     filteredReports.forEach((report) => addReportMarker(report));
+    refreshClusterOverlay();
   }, [filteredReports, mapReady, showDetailedPins]);
 
   useEffect(() => {
@@ -870,13 +1257,16 @@ export default function MapClient() {
     const report = reportList.find((item) => item.id === focusId);
     if (!report) return;
     focusedRef.current = true;
-    mapInstanceRef.current.panTo({ lat: report.lat, lng: report.lng });
-    mapInstanceRef.current.setZoom(16);
+    mapInstanceRef.current.flyTo({
+      center: [report.lng, report.lat],
+      zoom: 16,
+      essential: true,
+    });
     const marker = savedMarkersRef.current.find(
       (item) => item.reportId === report.id,
     );
     if (marker) {
-      google.maps.event.trigger(marker, 'click');
+      marker.triggerClick();
     }
   }, [mapReady, reportList, searchParams]);
 
@@ -884,7 +1274,7 @@ export default function MapClient() {
     if (!mapInstanceRef.current || !newPin || !activeType) return;
 
     if (!tempMarkerRef.current) {
-      const marker = new google.maps.Marker({
+      const marker = createMarkerHandle({
         map: mapInstanceRef.current,
         position: newPin,
         draggable: true,
@@ -892,27 +1282,28 @@ export default function MapClient() {
         zIndex: 2,
       });
 
-      marker.addListener('dragend', (event: any) => {
-        if (!event.latLng) return;
-        setNewPin(event.latLng.toJSON());
+      marker.marker.on('dragend', () => {
+        const position = marker.marker.getLngLat();
+        setNewPin({ lat: position.lat, lng: position.lng });
       });
 
       tempMarkerRef.current = marker;
     }
 
     if (!tempGlowRef.current) {
-      const glow = new google.maps.Marker({
+      const glow = createMarkerHandle({
         map: mapInstanceRef.current,
         position: newPin,
         clickable: false,
         icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          fillColor: '#ef4444',
+          kind: 'dot',
+          color: '#ef4444',
           fillOpacity: 0.25,
           strokeColor: '#ef4444',
           strokeOpacity: 0.6,
-          strokeWeight: 2,
-          scale: 20,
+          strokeWidth: 2,
+          size: 40,
+          anchor: 'center',
         },
         zIndex: 1,
       });
@@ -977,7 +1368,16 @@ export default function MapClient() {
     }
   }
 
-  function buildInfoContent(report: ReportRecord, marker: any) {
+  function refreshInfoContent(report: ReportRecord, marker: ReportMarkerHandle) {
+    if (!infoWindowRef.current || !mapInstanceRef.current) return;
+    const content = buildInfoContent(report, marker);
+    infoWindowRef.current
+      .setDOMContent(content)
+      .setLngLat([report.lng, report.lat])
+      .addTo(mapInstanceRef.current);
+  }
+
+  function buildInfoContent(report: ReportRecord, marker: ReportMarkerHandle) {
     const loggedInUser = currentUserRef.current;
     const canModerate = canModerateRef.current;
     const normalizedReport = normalizeReport(report);
@@ -986,6 +1386,7 @@ export default function MapClient() {
       type,
       category,
       status,
+      zone_name: zoneName,
       photo_url: photoUrl,
       angry_count: angryCount,
       repaired,
@@ -1033,6 +1434,17 @@ export default function MapClient() {
     header.appendChild(title);
     header.appendChild(dateEl);
     header.appendChild(statusPill);
+    if (zoneName) {
+      const zonePill = document.createElement('span');
+      zonePill.textContent = zoneName;
+      zonePill.style.width = 'fit-content';
+      zonePill.style.padding = '2px 8px';
+      zonePill.style.borderRadius = '999px';
+      zonePill.style.background = '#e0f2fe';
+      zonePill.style.fontSize = '11px';
+      zonePill.style.color = '#0369a1';
+      header.appendChild(zonePill);
+    }
     wrapper.appendChild(header);
 
     if (canModerate) {
@@ -1079,8 +1491,7 @@ export default function MapClient() {
           setReportList((prev) =>
             prev.map((item) => (item.id === reportId ? updated : item)),
           );
-          const refreshed = buildInfoContent(updated, marker);
-          infoWindowRef.current?.setContent(refreshed);
+          refreshInfoContent(updated, marker);
         } finally {
           statusSelect.disabled = false;
         }
@@ -1191,8 +1602,7 @@ export default function MapClient() {
           setReportList((prev) =>
             prev.map((item) => (item.id === reportId ? updated : item)),
           );
-          const refreshed = buildInfoContent(updated, marker);
-          infoWindowRef.current?.setContent(refreshed);
+          refreshInfoContent(updated, marker);
         } finally {
           saveTypeButton.disabled = false;
         }
@@ -1310,8 +1720,7 @@ export default function MapClient() {
             setReportList((prev) =>
               prev.map((item) => (item.id === reportId ? updated : item)),
             );
-            const refreshed = buildInfoContent(updated, marker);
-            infoWindowRef.current?.setContent(refreshed);
+            refreshInfoContent(updated, marker);
           } finally {
             repairButton.disabled = false;
           }
@@ -1426,8 +1835,7 @@ export default function MapClient() {
           setReportList((prev) =>
             prev.map((item) => (item.id === reportId ? updated : item)),
           );
-          const refreshed = buildInfoContent(updated, marker);
-          infoWindowRef.current?.setContent(refreshed);
+          refreshInfoContent(updated, marker);
         } finally {
           undoButton.disabled = false;
         }
@@ -1581,8 +1989,7 @@ export default function MapClient() {
             setReportList((prev) =>
               prev.map((item) => (item.id === reportId ? updated : item)),
             );
-            const refreshed = buildInfoContent(updated, marker);
-            infoWindowRef.current?.setContent(refreshed);
+            refreshInfoContent(updated, marker);
             void evaluateProgressNotice();
           } finally {
             addPhotoButton.disabled = false;
@@ -1632,35 +2039,41 @@ export default function MapClient() {
     const type = resolveTypeIcon(normalized.type);
     const isRepaired = normalized.status === 'Reparado' || normalized.repaired;
     const color = resolveTypeColor(normalized.type, normalized.category);
-    const marker = new google.maps.Marker({
+    const icon = isRepaired
+      ? showDetailedPins
+        ? createRepairedIcon()
+        : createDotIcon('#22c55e')
+      : showDetailedPins
+        ? type.icon
+          ? createMarkerIcon({ name: type.name, icon: type.icon })
+          : createDotIcon(color)
+        : createDotIcon(color);
+
+    const markerBase = createMarkerHandle({
+      map: mapInstanceRef.current,
       position: { lat: normalized.lat, lng: normalized.lng },
       draggable: false,
-      icon: isRepaired
-        ? showDetailedPins
-          ? createRepairedIcon()
-          : createDotIcon('#22c55e')
-        : showDetailedPins
-          ? type.icon
-            ? createMarkerIcon({ name: type.name, icon: type.icon })
-            : createDotIcon(color)
-          : createDotIcon(color),
+      icon,
       zIndex: 2,
     });
-    marker.reportId = normalized.id;
-    marker.reportData = normalized;
 
-    marker.addListener('click', () => {
-      if (!infoWindowRef.current) return;
-      const content = buildInfoContent(normalized, marker);
-      infoWindowRef.current.setContent(content);
-      infoWindowRef.current.open({
-        map: mapInstanceRef.current,
-        anchor: marker,
-      });
-    });
+    const marker: ReportMarkerHandle = {
+      ...markerBase,
+      reportId: normalized.id,
+      reportData: normalized,
+      triggerClick: () => {},
+    };
+
+    const handleClick = (event?: MouseEvent) => {
+      event?.stopPropagation();
+      refreshInfoContent(marker.reportData, marker);
+    };
+    marker.element.addEventListener('click', handleClick);
+    marker.triggerClick = () => {
+      handleClick();
+    };
 
     savedMarkersRef.current.push(marker);
-    clustererRef.current?.addMarker(marker, true);
   }
 
   async function deleteReport(reportId: string) {
@@ -1681,12 +2094,13 @@ export default function MapClient() {
         savedMarkersRef.current[markerIndex].setMap(null);
         savedMarkersRef.current.splice(markerIndex, 1);
       }
+      refreshClusterOverlay();
       setReportList((prev) => prev.filter((report) => report.id !== reportId));
       if (lastCreatedId === reportId) {
         setLastCreatedId(null);
       }
       window.localStorage.removeItem('bachejoa_last_report');
-      infoWindowRef.current?.close();
+      infoWindowRef.current?.remove();
     } catch {
       alert('No se pudo eliminar el reporte.');
     }
@@ -1908,6 +2322,19 @@ export default function MapClient() {
                   <option value="Verificado (con foto)">Verificado (con foto)</option>
                   <option value="Reparado">Reparado</option>
                 </select>
+                <select
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                  value={selectedZoneFilter}
+                  onChange={(event) => setSelectedZoneFilter(event.target.value)}
+                >
+                  <option value="all">Todas las zonas</option>
+                  {CITY_ZONES.map((zone) => (
+                    <option key={zone.id} value={zone.id}>
+                      {zone.name}
+                    </option>
+                  ))}
+                  <option value="fuera">Fuera de zona</option>
+                </select>
                 <p className="text-[11px] text-slate-500">
                   Mostrando {filteredReports.length} de {reportList.length}
                 </p>
@@ -1917,6 +2344,7 @@ export default function MapClient() {
                     setSelectedCategoryFilter('all');
                     setSelectedTypeFilter('all');
                     setSelectedStageFilter('all');
+                    setSelectedZoneFilter('all');
                   }}
                   type="button"
                 >
@@ -1992,10 +2420,19 @@ export default function MapClient() {
           </div>
 
           <div className="absolute inset-0">
-            <div className="absolute inset-0" ref={mapRef} />
-            {!GOOGLE_MAPS_API_KEY && (
+            <div
+              className="absolute inset-0"
+              ref={mapRef}
+              style={{ width: '100%', height: '100%' }}
+            />
+            {!MAPBOX_ACCESS_TOKEN && (
               <div className="absolute inset-0 flex items-center justify-center bg-slate-900/10 text-sm text-slate-600">
-                Agrega `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` para cargar el mapa.
+                Agrega `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` para cargar el mapa.
+              </div>
+            )}
+            {MAPBOX_ACCESS_TOKEN && mapError && (
+              <div className="absolute left-1/2 top-24 z-20 w-[92vw] max-w-xl -translate-x-1/2 rounded-2xl border border-rose-200 bg-rose-50/95 px-4 py-3 text-xs text-rose-700 shadow-[0_16px_30px_rgba(15,23,42,0.18)] backdrop-blur-sm">
+                Error de mapa: {mapError}
               </div>
             )}
           </div>
@@ -2008,7 +2445,7 @@ export default function MapClient() {
                   if (!mapInstanceRef.current) return;
                   const center = mapInstanceRef.current.getCenter();
                   if (!center) return;
-                  setNewPin(center.toJSON());
+                  setNewPin({ lat: center.lat, lng: center.lng });
                   setIsDialogOpen(true);
                 }}
                 type="button"
