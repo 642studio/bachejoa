@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '../../../lib/auth';
 import { safeErrorResponse, tooManyRequests } from '../../../lib/api';
+import { claimAnonymousReportsForUser } from '../../../lib/report-ownership';
 import { rateLimit } from '../../../lib/security';
 import { supabaseServer } from '../../../lib/supabase/server';
 
@@ -15,6 +16,11 @@ export async function GET(request: Request) {
   const user = await getSessionUser(request);
   if (!user) {
     return NextResponse.json({ error: 'No autorizado.' }, { status: 401 });
+  }
+
+  const claim = await claimAnonymousReportsForUser(request, user.id);
+  if (claim.error) {
+    console.error('[account] anonymous report claim failed', claim.error);
   }
 
   const { data: reports, error } = await supabaseServer

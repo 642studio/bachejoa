@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSessionUser } from '../../../../lib/auth';
 import { safeErrorResponse, tooManyRequests } from '../../../../lib/api';
 import { checkCSRF, csrfErrorResponse } from '../../../../lib/csrf';
+import { claimAnonymousReportsForUser } from '../../../../lib/report-ownership';
 import { rateLimit } from '../../../../lib/security';
 import { supabaseServer } from '../../../../lib/supabase/server';
 
@@ -13,6 +14,11 @@ export async function GET(request: Request) {
   const user = await getSessionUser(request);
   if (!user) {
     return NextResponse.json({ user: null, stats: null });
+  }
+
+  const claim = await claimAnonymousReportsForUser(request, user.id);
+  if (claim.error) {
+    console.error('[auth:me] anonymous report claim failed', claim.error);
   }
 
   const [{ count: totalCount }, { count: verifiedCount }] = await Promise.all([
