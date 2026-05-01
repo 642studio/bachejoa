@@ -43,6 +43,10 @@ type DashboardPayload = {
     signups: number[];
     contacts: number[];
   };
+  zones: Array<{
+    name: string;
+    count: number;
+  }>;
   warnings: string[];
 };
 
@@ -280,6 +284,27 @@ export default function AdminPage() {
                     </div>
                   );
                 })}
+              </div>
+            </section>
+
+            <section className="mt-6 rounded-[28px] bg-white/90 p-6 shadow-[0_20px_40px_rgba(15,23,42,0.12)]">
+              <h2 className="text-lg font-semibold">Distribución por zona</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Conteo automático por zona según coordenadas del reporte.
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {payload.zones.map((zone) => (
+                  <article
+                    key={zone.name}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                  >
+                    <p className="text-sm font-semibold text-slate-900">{zone.name}</p>
+                    <p className="mt-1 text-xs text-slate-500">{zone.count} reportes</p>
+                  </article>
+                ))}
+                {payload.zones.length === 0 ? (
+                  <p className="text-xs text-slate-500">Sin datos de zonas.</p>
+                ) : null}
               </div>
             </section>
 

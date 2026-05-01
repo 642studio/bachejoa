@@ -1,25 +1,34 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '../../../lib/auth';
+import { safeErrorResponse, tooManyRequests } from '../../../lib/api';
+import { writeAuditLog } from '../../../lib/audit';
+import { checkCSRF, csrfErrorResponse } from '../../../lib/csrf';
 import {
   normalizeReportInput,
   REPORT_SELECT,
 } from '../../../lib/reporting';
-import { supabaseBucket, supabaseServer } from '../../../lib/supabase/server';
+import { CursorSchema, ReportCreateSchema } from '../../../lib/schemas';
 import { getClientFingerprint, rateLimit } from '../../../lib/security';
+import { uploadProcessedReportPhoto } from '../../../lib/storage';
+import { supabaseServer } from '../../../lib/supabase/server';
+import { resolveZoneByCoordinates } from '../../../lib/zones';
 
 export const runtime = 'nodejs';
 
-function sanitizeFilename(name: string) {
-  return name.replace(/[^a-zA-Z0-9._-]/g, '_');
-}
-
-const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
-
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const limit = Math.min(Number(searchParams.get('limit') ?? 200) || 200, 500);
-  const cursor = searchParams.get('cursor');
-  const cursorId = searchParams.get('cursor_id');
+  const parsedCursor = CursorSchema.safeParse({
+    limit: searchParams.get('limit') ?? undefined,
+    cursor: searchParams.get('cursor') ?? undefined,
+    cursor_id: searchParams.get('cursor_id') ?? undefined,
+  });
+  if (!parsedCursor.success) {
+    return NextResponse.json({ error: 'Cursor inválido.' }, { status: 400 });
+  }
+  const { limit, cursor, cursor_id: cursorId } = parsedCursor.data;
+  if ((cursor && !cursorId) || (!cursor && cursorId)) {
+    return NextResponse.json({ error: 'Cursor inválido.' }, { status: 400 });
+  }
 
   let query = supabaseServer
     .from('reports')
@@ -37,7 +46,7 @@ export async function GET(request: Request) {
   const { data, error } = await query;
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return safeErrorResponse(error, 'No se pudieron cargar los reportes.');
   }
 
   const nextCursor =
@@ -52,28 +61,27 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (!checkCSRF(request)) return csrfErrorResponse();
+
   try {
     const rate = await rateLimit(request, 'reports:create', 12, 60);
     if (!rate.allowed) {
-      return NextResponse.json(
-        { error: 'Too many requests.' },
-        { status: 429 },
-      );
+      return tooManyRequests(rate.retryAfterSeconds);
     }
 
     const formData = await request.formData();
-    const lat = Number(formData.get('lat'));
-    const lng = Number(formData.get('lng'));
-    const type = String(formData.get('type') ?? '');
-    const category = String(formData.get('category') ?? '');
-    const subcategory = String(formData.get('subcategory') ?? '');
-    const status = String(formData.get('status') ?? '');
-    const providedPhotoUrl = String(formData.get('photo_url') ?? '').trim();
-    const photo = formData.get('photo') as File | null;
-
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return NextResponse.json({ error: 'Invalid payload.' }, { status: 400 });
+    const parsed = ReportCreateSchema.safeParse({
+      lat: formData.get('lat'),
+      lng: formData.get('lng'),
+      type: formData.get('type') ?? '',
+      category: formData.get('category') ?? '',
+      subcategory: formData.get('subcategory') ?? '',
+      status: formData.get('status') ?? 'Visible',
+    });
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Reporte inválido.' }, { status: 400 });
     }
+    const { lat, lng, type, category, subcategory, status } = parsed.data;
     const normalized = normalizeReportInput({
       category,
       subcategory,
@@ -83,6 +91,13 @@ export async function POST(request: Request) {
     if (!normalized) {
       return NextResponse.json(
         { error: 'Categoría o subtipo inválido.' },
+        { status: 400 },
+      );
+    }
+    const zone = resolveZoneByCoordinates(lat, lng);
+    if (zone.id === 'fuera') {
+      return NextResponse.json(
+        { error: 'El reporte está fuera de la zona de cobertura.' },
         { status: 400 },
       );
     }
@@ -96,7 +111,7 @@ export async function POST(request: Request) {
         .eq('reporter_fingerprint', fingerprint);
 
       if (countError) {
-        return NextResponse.json({ error: countError.message }, { status: 500 });
+        return safeErrorResponse(countError, 'No se pudo validar el límite.');
       }
       if ((count ?? 0) >= 5) {
         return NextResponse.json(
@@ -109,44 +124,17 @@ export async function POST(request: Request) {
       }
     }
 
-    let photoUrl: string | null = providedPhotoUrl || null;
-
-    if (!photoUrl && photo && photo.size > 0) {
-      if (photo.size > MAX_PHOTO_BYTES) {
+    let photoUrl: string | null = null;
+    const photo = formData.get('photo');
+    if (photo instanceof File && photo.size > 0) {
+      const upload = await uploadProcessedReportPhoto(photo);
+      if (upload.error || !upload.publicUrl) {
         return NextResponse.json(
-          { error: 'Photo too large.' },
+          { error: upload.error ?? 'No se pudo procesar la foto.' },
           { status: 400 },
         );
       }
-      if (!photo.type || !photo.type.startsWith('image/')) {
-        return NextResponse.json(
-          { error: 'Invalid photo type.' },
-          { status: 400 },
-        );
-      }
-      const buffer = Buffer.from(await photo.arrayBuffer());
-      const filename = sanitizeFilename(photo.name || 'foto');
-      const path = `reports/${crypto.randomUUID()}-${filename}`;
-
-      const { error: uploadError } = await supabaseServer.storage
-        .from(supabaseBucket)
-        .upload(path, buffer, {
-          contentType: photo.type || 'image/png',
-          upsert: false,
-        });
-
-      if (uploadError) {
-        return NextResponse.json(
-          { error: uploadError.message },
-          { status: 500 },
-        );
-      }
-
-      const { data: publicUrl } = supabaseServer.storage
-        .from(supabaseBucket)
-        .getPublicUrl(path);
-
-      photoUrl = publicUrl?.publicUrl ?? null;
+      photoUrl = upload.publicUrl;
     }
 
     const { data, error } = await supabaseServer
@@ -170,14 +158,20 @@ export async function POST(request: Request) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return safeErrorResponse(error, 'No se pudo crear el reporte.');
     }
+
+    await writeAuditLog(
+      request,
+      user ? { type: 'user', id: user.id } : { type: 'system' },
+      'report.create',
+      'report',
+      data.id,
+      { category: data.category, subcategory: data.subcategory, zone: zone.id },
+    );
 
     return NextResponse.json(data);
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 },
-    );
+    return safeErrorResponse(error, 'No se pudo crear el reporte.');
   }
 }

@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser, isPlatformAdmin } from '../../../../../../lib/auth';
 import { getOfficialSessionAccount } from '../../../../../../lib/officials';
-import { isValidReportStatus, REPORT_SELECT } from '../../../../../../lib/reporting';
+import { safeErrorResponse, tooManyRequests } from '../../../../../../lib/api';
+import { writeAuditLog } from '../../../../../../lib/audit';
+import { checkCSRF, csrfErrorResponse } from '../../../../../../lib/csrf';
+import { REPORT_SELECT } from '../../../../../../lib/reporting';
+import { StatusSchema } from '../../../../../../lib/schemas';
 import { supabaseServer } from '../../../../../../lib/supabase/server';
 import { rateLimit } from '../../../../../../lib/security';
+import { resolveZoneByCoordinates } from '../../../../../../lib/zones';
 
 export const runtime = 'nodejs';
-
-type StatusPayload = {
-  status?: string;
-};
 
 const OFFICIAL_ALLOWED_STATUSES = new Set(['En revisión', 'Reparado', 'Archivado']);
 
@@ -17,6 +18,8 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  if (!checkCSRF(request)) return csrfErrorResponse();
+
   const { id: reportId } = await params;
   if (!reportId) {
     return NextResponse.json({ error: 'Missing id' }, { status: 400 });
@@ -24,7 +27,7 @@ export async function POST(
 
   const rate = await rateLimit(request, 'officials:reports:status', 30, 60);
   if (!rate.allowed) {
-    return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
+    return tooManyRequests(rate.retryAfterSeconds);
   }
 
   const [user, official] = await Promise.all([
@@ -37,12 +40,11 @@ export async function POST(
     return NextResponse.json({ error: 'No autorizado.' }, { status: 401 });
   }
 
-  const payload = (await request.json().catch(() => ({}))) as StatusPayload;
-  const status = String(payload.status ?? '').trim();
-
-  if (!isValidReportStatus(status)) {
+  const parsed = StatusSchema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid status.' }, { status: 400 });
   }
+  const { status } = parsed.data;
 
   if (!isAdmin && !OFFICIAL_ALLOWED_STATUSES.has(status)) {
     return NextResponse.json(
@@ -53,7 +55,7 @@ export async function POST(
 
   const { data: report, error: reportError } = await supabaseServer
     .from('reports')
-    .select('id, category')
+    .select('id, category, lat, lng')
     .eq('id', reportId)
     .maybeSingle();
 
@@ -69,6 +71,18 @@ export async function POST(
         { status: 403 },
       );
     }
+    const officialZones = ((official?.zones as string[] | undefined) ?? []).filter(
+      Boolean,
+    );
+    if (officialZones.length > 0) {
+      const zone = resolveZoneByCoordinates(report.lat, report.lng);
+      if (!officialZones.includes(zone.id)) {
+        return NextResponse.json(
+          { error: 'No tienes permiso en esta zona.' },
+          { status: 403 },
+        );
+      }
+    }
   }
 
   const updates =
@@ -78,8 +92,6 @@ export async function POST(
           status,
           repaired: false,
           repaired_at: null,
-          repair_rating_avg: 0,
-          repair_rating_count: 0,
         };
 
   const { data, error } = await supabaseServer
@@ -90,8 +102,19 @@ export async function POST(
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return safeErrorResponse(error, 'No se pudo cambiar el estatus.');
   }
+
+  await writeAuditLog(
+    request,
+    isAdmin
+      ? { type: 'user', id: user?.id }
+      : { type: 'official', id: official?.id },
+    'report.status.update',
+    'report',
+    reportId,
+    { status },
+  );
 
   return NextResponse.json(data);
 }

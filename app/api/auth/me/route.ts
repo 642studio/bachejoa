@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '../../../../lib/auth';
+import { safeErrorResponse, tooManyRequests } from '../../../../lib/api';
+import { checkCSRF, csrfErrorResponse } from '../../../../lib/csrf';
 import { rateLimit } from '../../../../lib/security';
 import { supabaseServer } from '../../../../lib/supabase/server';
 
@@ -35,9 +37,11 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  if (!checkCSRF(request)) return csrfErrorResponse();
+
   const rate = await rateLimit(request, 'auth:profile:update', 20, 60);
   if (!rate.allowed) {
-    return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
+    return tooManyRequests(rate.retryAfterSeconds);
   }
 
   const user = await getSessionUser(request);
@@ -62,10 +66,7 @@ export async function PATCH(request: Request) {
     .single();
 
   if (error || !data) {
-    return NextResponse.json(
-      { error: error?.message ?? 'No se pudo actualizar el perfil.' },
-      { status: 500 },
-    );
+    return safeErrorResponse(error, 'No se pudo actualizar el perfil.');
   }
 
   return NextResponse.json({ user: data });

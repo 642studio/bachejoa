@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser, isPlatformAdmin } from '../../../../lib/auth';
+import { safeErrorResponse } from '../../../../lib/api';
+import { resolveZoneByCoordinates } from '../../../../lib/zones';
 import { supabaseServer } from '../../../../lib/supabase/server';
 
 export const runtime = 'nodejs';
@@ -16,6 +18,11 @@ type DashboardUser = {
   email: string;
   role: 'admin' | 'citizen';
   created_at: string;
+};
+
+type ReportPoint = {
+  lat: number;
+  lng: number;
 };
 
 function relationMissing(errorCode?: string) {
@@ -75,6 +82,7 @@ export async function GET(request: Request) {
     reportsTrafficQuery,
     usersTrafficQuery,
     contactsTrafficQuery,
+    reportsZoneQuery,
   ] = await Promise.all([
     supabaseServer.from('users').select('id', { head: true, count: 'exact' }),
     supabaseServer.from('reports').select('id', { head: true, count: 'exact' }),
@@ -114,18 +122,13 @@ export async function GET(request: Request) {
       .gte('created_at', sinceIso)
       .order('created_at', { ascending: true })
       .limit(5000),
+    supabaseServer.from('reports').select('lat,lng').limit(8000),
   ]);
 
   if (usersListQuery.error || totalUsersQuery.error || totalReportsQuery.error) {
-    return NextResponse.json(
-      {
-        error:
-          usersListQuery.error?.message ??
-          totalUsersQuery.error?.message ??
-          totalReportsQuery.error?.message ??
-          'No se pudo cargar el panel admin.',
-      },
-      { status: 500 },
+    return safeErrorResponse(
+      usersListQuery.error ?? totalUsersQuery.error ?? totalReportsQuery.error,
+      'No se pudo cargar el panel admin.',
     );
   }
 
@@ -136,20 +139,16 @@ export async function GET(request: Request) {
     (inboxQuery.error && !inboxMissing) ||
     (contactsTrafficQuery.error && !contactsTrafficMissing)
   ) {
-    return NextResponse.json(
-      {
-        error:
-          inboxQuery.error?.message ??
-          contactsTrafficQuery.error?.message ??
-          'No se pudo cargar la bandeja de contacto.',
-      },
-      { status: 500 },
+    return safeErrorResponse(
+      inboxQuery.error ?? contactsTrafficQuery.error,
+      'No se pudo cargar la bandeja de contacto.',
     );
   }
 
   const reportsTrafficRows = (reportsTrafficQuery.data ?? []) as TrafficRow[];
   const usersTrafficRows = (usersTrafficQuery.data ?? []) as TrafficRow[];
   const users = (usersListQuery.data ?? []) as DashboardUser[];
+  const reportPoints = (reportsZoneQuery.data ?? []) as ReportPoint[];
   const contactsTrafficRows = contactsTrafficMissing
     ? []
     : (((contactsTrafficQuery.data ?? []) as TrafficRow[]) ?? []);
@@ -160,6 +159,15 @@ export async function GET(request: Request) {
     signups: aggregateByDay(usersTrafficRows, trafficDays),
     contacts: aggregateByDay(contactsTrafficRows, trafficDays),
   };
+
+  const zoneCountMap = new Map<string, number>();
+  reportPoints.forEach((point) => {
+    const zone = resolveZoneByCoordinates(point.lat, point.lng);
+    zoneCountMap.set(zone.name, (zoneCountMap.get(zone.name) ?? 0) + 1);
+  });
+  const zones = Array.from(zoneCountMap.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
 
   return NextResponse.json({
     me: user,
@@ -175,6 +183,7 @@ export async function GET(request: Request) {
     users,
     inbox: inboxMissing ? [] : (inboxQuery.data ?? []),
     traffic,
+    zones,
     warnings: [
       ...(inboxMissing
         ? ['La tabla public.contact_requests no existe en esta base de datos.']

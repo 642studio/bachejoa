@@ -1,33 +1,28 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '../../../lib/supabase/server';
 import { rateLimit } from '../../../lib/security';
+import { safeErrorResponse, tooManyRequests } from '../../../lib/api';
+import { checkCSRF, csrfErrorResponse } from '../../../lib/csrf';
+import { ContactSchema } from '../../../lib/schemas';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
+  if (!checkCSRF(request)) return csrfErrorResponse();
+
   const rate = await rateLimit(request, 'contact:create', 6, 60);
   if (!rate.allowed) {
-    return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
+    return tooManyRequests(rate.retryAfterSeconds);
   }
 
-  const payload = (await request.json().catch(() => ({}))) as {
-    name?: string;
-    contact?: string;
-    topic?: string;
-    message?: string;
-  };
-
-  const name = String(payload.name ?? '').trim();
-  const contact = String(payload.contact ?? '').trim();
-  const topic = String(payload.topic ?? '').trim();
-  const message = String(payload.message ?? '').trim();
-
-  if (!name || !contact || !message) {
+  const parsed = ContactSchema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: 'Missing required fields.' },
+      { error: 'Datos inválidos.' },
       { status: 400 },
     );
   }
+  const { name, contact, topic, message } = parsed.data;
 
   const { data, error } = await supabaseServer
     .from('contact_requests')
@@ -36,7 +31,7 @@ export async function POST(request: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return safeErrorResponse(error, 'No se pudo guardar el contacto.');
   }
 
   return NextResponse.json({ id: data?.id });

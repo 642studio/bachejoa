@@ -1,59 +1,41 @@
 import { NextResponse } from 'next/server';
-import { supabaseBucket, supabaseServer } from '../../../lib/supabase/server';
+import { getSessionUser } from '../../../lib/auth';
+import { tooManyRequests } from '../../../lib/api';
+import { checkCSRF, csrfErrorResponse } from '../../../lib/csrf';
 import { rateLimit } from '../../../lib/security';
+import { uploadProcessedReportPhoto } from '../../../lib/storage';
 
 export const runtime = 'nodejs';
 
-const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
-
-function sanitizeFilename(name: string) {
-  return name.replace(/[^a-zA-Z0-9._-]/g, '_');
-}
-
 export async function POST(request: Request) {
+  if (!checkCSRF(request)) return csrfErrorResponse();
+
   const rate = await rateLimit(request, 'uploads:create', 10, 60);
   if (!rate.allowed) {
-    return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
+    return tooManyRequests(rate.retryAfterSeconds);
   }
 
-  const payload = (await request.json().catch(() => ({}))) as {
-    filename?: string;
-    contentType?: string;
-    size?: number;
-  };
-
-  const size = Number(payload.size ?? 0);
-  const contentType = String(payload.contentType ?? '');
-  const filename = sanitizeFilename(String(payload.filename ?? 'foto'));
-
-  if (!Number.isFinite(size) || size <= 0) {
-    return NextResponse.json({ error: 'Invalid size.' }, { status: 400 });
-  }
-  if (size > MAX_PHOTO_BYTES) {
-    return NextResponse.json({ error: 'Photo too large.' }, { status: 400 });
-  }
-  if (!contentType.startsWith('image/')) {
-    return NextResponse.json({ error: 'Invalid file type.' }, { status: 400 });
+  const user = await getSessionUser(request);
+  if (!user) {
+    return NextResponse.json({ error: 'No autorizado.' }, { status: 401 });
   }
 
-  const path = `reports/${crypto.randomUUID()}-${filename}`;
-
-  const { data, error } = await supabaseServer.storage
-    .from(supabaseBucket)
-    .createSignedUploadUrl(path);
-
-  if (error || !data) {
-    return NextResponse.json({ error: error?.message ?? 'Upload error' }, { status: 500 });
+  const formData = await request.formData().catch(() => null);
+  const photo = formData?.get('photo');
+  if (!(photo instanceof File) || photo.size <= 0) {
+    return NextResponse.json({ error: 'Foto inválida.' }, { status: 400 });
   }
 
-  const { data: publicUrl } = supabaseServer.storage
-    .from(supabaseBucket)
-    .getPublicUrl(path);
+  const upload = await uploadProcessedReportPhoto(photo);
+  if (upload.error || !upload.publicUrl) {
+    return NextResponse.json(
+      { error: upload.error ?? 'No se pudo procesar la foto.' },
+      { status: 400 },
+    );
+  }
 
   return NextResponse.json({
-    bucket: supabaseBucket,
-    path,
-    signedUrl: data.signedUrl,
-    publicUrl: publicUrl?.publicUrl ?? null,
+    path: upload.path,
+    publicUrl: upload.publicUrl,
   });
 }

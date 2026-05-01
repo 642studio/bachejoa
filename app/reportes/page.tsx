@@ -99,6 +99,12 @@ export default function ReportesPage() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <a
+              className="rounded-full bg-emerald-400 px-5 py-2 text-sm font-semibold text-slate-900 shadow-lg"
+              href="/minijuego"
+            >
+              Jugar runner
+            </a>
+            <a
               className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-lg"
               href="/map"
             >

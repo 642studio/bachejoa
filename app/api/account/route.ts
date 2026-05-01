@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '../../../lib/auth';
+import { safeErrorResponse, tooManyRequests } from '../../../lib/api';
 import { rateLimit } from '../../../lib/security';
 import { supabaseServer } from '../../../lib/supabase/server';
 
@@ -8,7 +9,7 @@ export const runtime = 'nodejs';
 export async function GET(request: Request) {
   const rate = await rateLimit(request, 'account:read', 30, 60);
   if (!rate.allowed) {
-    return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
+    return tooManyRequests(rate.retryAfterSeconds);
   }
 
   const user = await getSessionUser(request);
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
     .order('created_at', { ascending: false });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return safeErrorResponse(error, 'No se pudo cargar la cuenta.');
   }
 
   return NextResponse.json({

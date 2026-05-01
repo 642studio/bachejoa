@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { REPORT_CATEGORIES, REPORT_STATUS_STAGES } from '../../lib/reporting';
+import { CITY_ZONES } from '../../lib/zones';
 
 type DashboardPayload = {
   viewer:
@@ -16,9 +17,11 @@ type DashboardPayload = {
         full_name: string;
         area: string;
         categories: string[];
+        zones: string[];
       };
   can_manage_credentials: boolean;
   allowed_categories: string[];
+  allowed_zones: string[];
   reports: Array<{
     id: string;
     created_at: string;
@@ -28,6 +31,8 @@ type DashboardPayload = {
     lat: number;
     lng: number;
     photo_url: string | null;
+    zone_id?: string | null;
+    zone_name?: string | null;
   }>;
   summary: {
     total_open: number;
@@ -43,6 +48,7 @@ type DashboardPayload = {
     email: string | null;
     area: string | null;
     categories: string[];
+    zones?: string[];
     active: boolean;
     created_at: string;
     last_login_at: string | null;
@@ -75,6 +81,7 @@ export default function FuncionariosPage() {
   const [newEmail, setNewEmail] = useState('');
   const [newArea, setNewArea] = useState('');
   const [newCategories, setNewCategories] = useState<string[]>([]);
+  const [newZones, setNewZones] = useState<string[]>([]);
   const [creatingOfficial, setCreatingOfficial] = useState(false);
   const [createError, setCreateError] = useState('');
 
@@ -178,6 +185,7 @@ export default function FuncionariosPage() {
           email: newEmail,
           area: newArea,
           categories: newCategories,
+          zones: newZones,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -191,6 +199,7 @@ export default function FuncionariosPage() {
       setNewEmail('');
       setNewArea('');
       setNewCategories([]);
+      setNewZones([]);
       setNotice('Credencial de funcionario creada.');
       await loadDashboard();
     } finally {
@@ -298,9 +307,14 @@ export default function FuncionariosPage() {
               <article className="rounded-3xl bg-white/90 p-6 shadow-[0_20px_40px_rgba(15,23,42,0.12)]">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="text-lg font-semibold">Bandeja de atencion</h2>
-                  <span className="text-xs text-slate-500">
-                    {dashboard.allowed_categories.join(' · ')}
-                  </span>
+                  <div className="text-right text-xs text-slate-500">
+                    <p>{dashboard.allowed_categories.join(' · ')}</p>
+                    <p>
+                      {dashboard.allowed_zones.length
+                        ? `Zonas: ${dashboard.allowed_zones.join(' · ')}`
+                        : 'Zonas: todas'}
+                    </p>
+                  </div>
                 </div>
                 <div className="mt-4 max-h-[620px] overflow-auto rounded-2xl border border-slate-200">
                   <table className="min-w-full divide-y divide-slate-200 text-left">
@@ -314,6 +328,9 @@ export default function FuncionariosPage() {
                         </th>
                         <th className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                           Tipo
+                        </th>
+                        <th className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Zona
                         </th>
                         <th className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                           Etapa
@@ -333,6 +350,9 @@ export default function FuncionariosPage() {
                             {report.category}
                           </td>
                           <td className="px-3 py-2 text-xs text-slate-600">{report.subcategory}</td>
+                          <td className="px-3 py-2 text-xs text-slate-600">
+                            {report.zone_name ?? 'Fuera de zona'}
+                          </td>
                           <td className="px-3 py-2 text-xs text-slate-600">{report.status}</td>
                           <td className="px-3 py-2">
                             <select
@@ -418,6 +438,32 @@ export default function FuncionariosPage() {
                           </label>
                         ))}
                       </div>
+                      <div className="grid gap-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-500">
+                          Zonas asignadas
+                        </p>
+                        {CITY_ZONES.map((zone) => (
+                          <label key={zone.id} className="flex items-center gap-2 text-xs text-slate-700">
+                            <input
+                              checked={newZones.includes(zone.id)}
+                              type="checkbox"
+                              onChange={(event) => {
+                                if (event.target.checked) {
+                                  setNewZones((prev) => [...prev, zone.id]);
+                                } else {
+                                  setNewZones((prev) =>
+                                    prev.filter((item) => item !== zone.id),
+                                  );
+                                }
+                              }}
+                            />
+                            {zone.name}
+                          </label>
+                        ))}
+                        <p className="text-[11px] text-slate-500">
+                          Si no seleccionas zonas, atendera todas.
+                        </p>
+                      </div>
                       <button
                         className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
                         disabled={creatingOfficial}
@@ -433,7 +479,11 @@ export default function FuncionariosPage() {
                     <h2 className="text-lg font-semibold">Sesion de funcionario</h2>
                     <p className="mt-1 text-xs text-slate-500">
                       {dashboard.viewer.role === 'official'
-                        ? `Responsable: ${dashboard.viewer.full_name} (${dashboard.viewer.username})`
+                        ? `Responsable: ${dashboard.viewer.full_name} (${dashboard.viewer.username}) · Zonas: ${
+                            dashboard.viewer.zones.length
+                              ? dashboard.viewer.zones.join(' · ')
+                              : 'todas'
+                          }`
                         : ''}
                     </p>
                     <button
@@ -460,6 +510,9 @@ export default function FuncionariosPage() {
                           </p>
                           <p className="mt-1 text-[11px] text-slate-500">
                             Categorias: {official.categories.join(' · ')}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            Zonas: {(official.zones ?? []).length ? (official.zones ?? []).join(' · ') : 'todas'}
                           </p>
                           <p className="text-[11px] text-slate-500">
                             Alta: {formatDate(official.created_at)}

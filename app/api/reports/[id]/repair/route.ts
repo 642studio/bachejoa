@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser, isPlatformAdmin } from '../../../../../lib/auth';
+import { safeErrorResponse, tooManyRequests } from '../../../../../lib/api';
+import { writeAuditLog } from '../../../../../lib/audit';
+import { checkCSRF, csrfErrorResponse } from '../../../../../lib/csrf';
 import { REPORT_SELECT } from '../../../../../lib/reporting';
 import { supabaseServer } from '../../../../../lib/supabase/server';
 import { rateLimit } from '../../../../../lib/security';
@@ -10,6 +13,8 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  if (!checkCSRF(request)) return csrfErrorResponse();
+
   const { id: reportId } = await params;
   if (!reportId) {
     return NextResponse.json({ error: 'Missing id' }, { status: 400 });
@@ -17,7 +22,7 @@ export async function POST(
 
   const rate = await rateLimit(request, 'reports:repair', 8, 60);
   if (!rate.allowed) {
-    return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
+    return tooManyRequests(rate.retryAfterSeconds);
   }
 
   const user = await getSessionUser(request);
@@ -43,8 +48,6 @@ export async function POST(
         status: 'Visible',
         repaired: false,
         repaired_at: null,
-        repair_rating_avg: 0,
-        repair_rating_count: 0,
       };
 
   const { data, error } = await supabaseServer
@@ -55,8 +58,17 @@ export async function POST(
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return safeErrorResponse(error, 'No se pudo cambiar el estatus.');
   }
+
+  await writeAuditLog(
+    request,
+    { type: 'user', id: user?.id },
+    'report.repair.update',
+    'report',
+    reportId,
+    { repaired: nextRepaired },
+  );
 
   return NextResponse.json(data);
 }

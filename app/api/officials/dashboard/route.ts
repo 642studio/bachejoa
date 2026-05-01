@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser, isPlatformAdmin } from '../../../../lib/auth';
 import { getOfficialSessionAccount } from '../../../../lib/officials';
+import { safeErrorResponse } from '../../../../lib/api';
 import { REPORT_SELECT, REPORT_CATEGORIES } from '../../../../lib/reporting';
 import { supabaseServer } from '../../../../lib/supabase/server';
+import { resolveZoneByCoordinates } from '../../../../lib/zones';
 
 export const runtime = 'nodejs';
 
@@ -11,6 +13,10 @@ type ReportRow = {
   status: string;
   category: string;
   subcategory: string;
+  lat: number;
+  lng: number;
+  zone_id?: string | null;
+  zone_name?: string | null;
 };
 
 export async function GET(request: Request) {
@@ -27,6 +33,7 @@ export async function GET(request: Request) {
   const allowedCategories = isAdmin
     ? REPORT_CATEGORIES.map((item) => item.name)
     : (official?.categories ?? []);
+  const allowedZones = isAdmin ? [] : ((official?.zones as string[] | undefined) ?? []);
 
   let reports: ReportRow[] = [];
   if (allowedCategories.length > 0) {
@@ -39,10 +46,26 @@ export async function GET(request: Request) {
       .limit(500);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return safeErrorResponse(error, 'No se pudieron cargar los reportes.');
     }
     reports = (data ?? []) as ReportRow[];
   }
+
+  if (!isAdmin && allowedZones.length > 0) {
+    reports = reports.filter((report) => {
+      const zone = resolveZoneByCoordinates(report.lat, report.lng);
+      return allowedZones.includes(zone.id);
+    });
+  }
+
+  reports = reports.map((report) => {
+    const zone = resolveZoneByCoordinates(report.lat, report.lng);
+    return {
+      ...report,
+      zone_id: report.zone_id ?? zone.id,
+      zone_name: report.zone_name ?? zone.name,
+    };
+  });
 
   const summary = {
     total_open: reports.length,
@@ -67,17 +90,16 @@ export async function GET(request: Request) {
   if (isAdmin) {
     const { data, error } = await supabaseServer
       .from('official_accounts')
-      .select(
-        'id, username, full_name, email, area, categories, active, created_at, last_login_at',
-      )
+      .select('*')
       .order('created_at', { ascending: false })
       .limit(300);
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return safeErrorResponse(error, 'No se pudieron cargar los funcionarios.');
     }
     officials = (data ?? []).map((item) => ({
       ...item,
       categories: item.categories ?? [],
+      zones: item.zones ?? [],
     }));
   }
 
@@ -94,9 +116,11 @@ export async function GET(request: Request) {
           full_name: official?.full_name ?? '',
           area: official?.area ?? '',
           categories: official?.categories ?? [],
+          zones: (official?.zones as string[] | undefined) ?? [],
         },
     can_manage_credentials: isAdmin,
     allowed_categories: allowedCategories,
+    allowed_zones: allowedZones,
     reports,
     summary,
     officials,

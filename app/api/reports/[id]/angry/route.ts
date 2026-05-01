@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '../../../../../lib/supabase/server';
 import { getClientFingerprint, rateLimit } from '../../../../../lib/security';
+import { tooManyRequests, safeErrorResponse } from '../../../../../lib/api';
+import { checkCSRF, csrfErrorResponse } from '../../../../../lib/csrf';
 
 export const runtime = 'nodejs';
 
@@ -8,6 +10,8 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  if (!checkCSRF(request)) return csrfErrorResponse();
+
   const { id: reportId } = await params;
   if (!reportId) {
     return NextResponse.json({ error: 'Missing id' }, { status: 400 });
@@ -15,7 +19,7 @@ export async function POST(
 
   const rate = await rateLimit(request, 'reports:angry', 30, 60);
   if (!rate.allowed) {
-    return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
+    return tooManyRequests(rate.retryAfterSeconds);
   }
 
   const { fingerprint } = getClientFingerprint(request);
@@ -32,7 +36,7 @@ export async function POST(
 
   const { data: existing, error: fetchError } = await supabaseServer
     .from('reports')
-    .select('angry_count')
+    .select('id')
     .eq('id', reportId)
     .single();
 
@@ -48,18 +52,15 @@ export async function POST(
     return NextResponse.json({ error: 'Already voted.' }, { status: 409 });
   }
 
-  const nextCount = (existing.angry_count ?? 0) + 1;
-
   const { data, error } = await supabaseServer
     .from('reports')
-    .update({ angry_count: nextCount })
-    .eq('id', reportId)
     .select('angry_count')
+    .eq('id', reportId)
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return safeErrorResponse(error, 'No se pudo registrar el voto.');
   }
 
-  return NextResponse.json({ angry_count: data?.angry_count ?? nextCount });
+  return NextResponse.json({ angry_count: data?.angry_count ?? 0 });
 }

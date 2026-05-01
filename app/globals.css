@@ -233,3 +233,66 @@ body {
     transform: none;
   }
 }
+
+.runner-root {
+  background:
+    radial-gradient(1100px 560px at 12% 5%, rgba(34, 211, 238, 0.28), transparent 70%),
+    radial-gradient(1000px 620px at 85% 0%, rgba(16, 185, 129, 0.22), transparent 70%),
+    linear-gradient(180deg, #0f172a 0%, #0f2944 40%, #0c3555 100%);
+}
+
+.runner-splash {
+  background:
+    radial-gradient(950px 580px at 20% 5%, rgba(255, 255, 255, 0.45), transparent 65%),
+    radial-gradient(920px 600px at 85% 10%, rgba(255, 255, 255, 0.35), transparent 65%),
+    linear-gradient(180deg, #3aacef 0%, #79ccff 55%, #a8e0ff 100%);
+}
+
+.runner-card {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.72), rgba(3, 7, 18, 0.7));
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: 0 22px 42px rgba(2, 6, 23, 0.42);
+}
+
+.runner-track {
+  background:
+    radial-gradient(1200px 500px at 50% -120px, rgba(125, 211, 252, 0.35), transparent 60%),
+    linear-gradient(180deg, #64748b 0%, #334155 35%, #1f2937 100%);
+}
+
+.runner-lane-lines {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.24),
+    rgba(255, 255, 255, 0.24) 18px,
+    transparent 18px,
+    transparent 42px
+  );
+  opacity: 0.25;
+  animation: runner-road-move 0.8s linear infinite;
+}
+
+.runner-player-jump {
+  transform: translate(-50%, -38%) scale(1.05);
+}
+
+.runner-player-slide {
+  transform: translate(-50%, 8%) scale(0.9);
+}
+
+@keyframes runner-road-move {
+  from {
+    background-position-y: 0;
+  }
+  to {
+    background-position-y: 42px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runner-lane-lines {
+    animation: none;
+  }
+}

@@ -1,7 +1,9 @@
 import { createHash, randomBytes } from 'crypto';
+import { getRequestInfo } from './security';
 import { supabaseServer } from './supabase/server';
 
-const OFFICIAL_SESSION_COOKIE = 'bachejoa_official_session';
+const OFFICIAL_SESSION_COOKIE = '__Host-bachejoa_official_session';
+const LEGACY_OFFICIAL_SESSION_COOKIE = 'bachejoa_official_session';
 const OFFICIAL_SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
 const OFFICIAL_SESSION_TTL_MS = OFFICIAL_SESSION_TTL_SECONDS * 1000;
 
@@ -26,24 +28,59 @@ export function getOfficialSessionCookieName() {
   return OFFICIAL_SESSION_COOKIE;
 }
 
-export function readOfficialSessionToken(request: Request) {
-  const cookies = parseCookies(request.headers.get('cookie'));
-  return cookies.get(OFFICIAL_SESSION_COOKIE) ?? null;
+export function getLegacyOfficialSessionCookieName() {
+  return LEGACY_OFFICIAL_SESSION_COOKIE;
 }
 
-export async function createOfficialSession(officialId: string) {
+export function readOfficialSessionToken(request: Request) {
+  const cookies = parseCookies(request.headers.get('cookie'));
+  return (
+    cookies.get(OFFICIAL_SESSION_COOKIE) ??
+    cookies.get(LEGACY_OFFICIAL_SESSION_COOKIE) ??
+    null
+  );
+}
+
+export function getOfficialSessionCookieOptions(maxAge: number) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict' as const,
+    path: '/',
+    maxAge,
+  };
+}
+
+export async function createOfficialSession(
+  officialId: string,
+  request?: Request,
+) {
   const token = randomBytes(32).toString('hex');
   const tokenHash = hashSessionToken(token);
   const expiresAt = new Date(Date.now() + OFFICIAL_SESSION_TTL_MS).toISOString();
+  const requestInfo = request ? getRequestInfo(request) : null;
 
-  const { error } = await supabaseServer.from('official_sessions').insert({
+  let { error } = await supabaseServer.from('official_sessions').insert({
     official_id: officialId,
     token_hash: tokenHash,
     expires_at: expiresAt,
+    ip_address: requestInfo?.ip ?? null,
+    user_agent: requestInfo?.userAgent ?? null,
+    last_used_at: new Date().toISOString(),
   });
 
+  if (error?.code === '42703') {
+    const fallback = await supabaseServer.from('official_sessions').insert({
+      official_id: officialId,
+      token_hash: tokenHash,
+      expires_at: expiresAt,
+    });
+    error = fallback.error;
+  }
+
   if (error) {
-    throw new Error(error.message);
+    console.error('[officials] session insert failed', error);
+    throw new Error('SESSION_CREATE_FAILED');
   }
 
   return {
@@ -78,12 +115,14 @@ export async function getOfficialSessionAccount(request: Request) {
     await supabaseServer.from('official_sessions').delete().eq('id', session.id);
     return null;
   }
+  await supabaseServer
+    .from('official_sessions')
+    .update({ last_used_at: new Date().toISOString() })
+    .eq('id', session.id);
 
   const { data: official, error: officialError } = await supabaseServer
     .from('official_accounts')
-    .select(
-      'id, username, full_name, email, area, categories, active, created_at, last_login_at',
-    )
+    .select('*')
     .eq('id', session.official_id)
     .maybeSingle();
 

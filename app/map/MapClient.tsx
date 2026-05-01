@@ -1939,43 +1939,11 @@ export default function MapClient() {
               return;
             }
 
-            const uploadRes = await fetch('/api/uploads', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                filename: uploadFile.name,
-                contentType: uploadFile.type,
-                size: uploadFile.size,
-              }),
-            });
-            if (!uploadRes.ok) {
-              const payload = (await uploadRes.json().catch(() => ({}))) as {
-                error?: string;
-              };
-              alert(payload.error ?? 'No se pudo subir la foto.');
-              return;
-            }
-            const uploadData = (await uploadRes.json()) as {
-              signedUrl: string;
-              publicUrl: string | null;
-            };
-            const putRes = await fetch(uploadData.signedUrl, {
-              method: 'PUT',
-              headers: {
-                'Content-Type':
-                  uploadFile.type || 'application/octet-stream',
-              },
-              body: uploadFile,
-            });
-            if (!putRes.ok || !uploadData.publicUrl) {
-              alert('No se pudo subir la foto.');
-              return;
-            }
-
+            const photoFormData = new FormData();
+            photoFormData.append('photo', uploadFile);
             const saveRes = await fetch(`/api/reports/${reportId}/photo`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ photo_url: uploadData.publicUrl }),
+              body: photoFormData,
             });
             if (!saveRes.ok) {
               const payload = (await saveRes.json().catch(() => ({}))) as {
@@ -2161,6 +2129,8 @@ export default function MapClient() {
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
+        needs_email_verification?: boolean;
+        email?: string;
         user?: {
           id: string;
           username: string;
@@ -2170,7 +2140,19 @@ export default function MapClient() {
           created_at?: string;
         };
       };
-      if (!res.ok || !data.user) {
+      if (!res.ok) {
+        setAuthError(data.error ?? 'No se pudo procesar la cuenta.');
+        return;
+      }
+      if (data.needs_email_verification) {
+        setAuthPassword('');
+        setAuthError('');
+        setAuthNotice(
+          `Revisa ${data.email ?? 'tu correo'} para verificar la cuenta antes de entrar.`,
+        );
+        return;
+      }
+      if (!data.user) {
         setAuthError(data.error ?? 'No se pudo procesar la cuenta.');
         return;
       }
@@ -2754,46 +2736,7 @@ export default function MapClient() {
                           return;
                         }
 
-                        const uploadRes = await fetch('/api/uploads', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            filename: uploadFile.name,
-                            contentType: uploadFile.type,
-                            size: uploadFile.size,
-                          }),
-                        });
-                        if (uploadRes.ok) {
-                          const uploadData = (await uploadRes.json()) as {
-                            bucket: string;
-                            path: string;
-                            signedUrl: string;
-                            publicUrl: string | null;
-                          };
-                          const uploadResponse = await fetch(
-                            uploadData.signedUrl,
-                            {
-                              method: 'PUT',
-                              headers: {
-                                'Content-Type':
-                                  uploadFile.type || 'application/octet-stream',
-                              },
-                              body: uploadFile,
-                            },
-                          );
-                          if (!uploadResponse.ok) {
-                            alert('No se pudo subir la foto.');
-                            setIsSaving(false);
-                            return;
-                          }
-                          if (uploadData.publicUrl) {
-                            formData.append('photo_url', uploadData.publicUrl);
-                          }
-                        } else {
-                          alert('No se pudo subir la foto.');
-                          setIsSaving(false);
-                          return;
-                        }
+                        formData.append('photo', uploadFile);
                       }
 
                       const res = await fetch('/api/reports', {

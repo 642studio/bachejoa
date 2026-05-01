@@ -1,43 +1,26 @@
 import { NextResponse } from 'next/server';
-import {
-  createSession,
-  getSessionCookieName,
-  hashPassword,
-} from '../../../../lib/auth';
+import { csrfErrorResponse, checkCSRF } from '../../../../lib/csrf';
+import { safeErrorResponse, tooManyRequests } from '../../../../lib/api';
+import { RegisterSchema } from '../../../../lib/schemas';
 import { rateLimit } from '../../../../lib/security';
+import { createSupabaseAuthClient } from '../../../../lib/supabase/auth';
 import { supabaseServer } from '../../../../lib/supabase/server';
 
 export const runtime = 'nodejs';
 
-type RegisterPayload = {
-  username?: string;
-  email?: string;
-  password?: string;
-};
-
 export async function POST(request: Request) {
+  if (!checkCSRF(request)) return csrfErrorResponse();
+
   const rate = await rateLimit(request, 'auth:register', 10, 60);
   if (!rate.allowed) {
-    return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
+    return tooManyRequests(rate.retryAfterSeconds);
   }
 
-  const payload = (await request.json().catch(() => ({}))) as RegisterPayload;
-  const username = String(payload.username ?? '').trim();
-  const email = String(payload.email ?? '').trim().toLowerCase();
-  const password = String(payload.password ?? '').trim();
-
-  if (!username || username.length < 3 || username.length > 30) {
-    return NextResponse.json({ error: 'Username inválido.' }, { status: 400 });
+  const parsed = RegisterSchema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Datos de registro inválidos.' }, { status: 400 });
   }
-  if (!email || !email.includes('@')) {
-    return NextResponse.json({ error: 'Correo inválido.' }, { status: 400 });
-  }
-  if (!password || password.length < 8) {
-    return NextResponse.json(
-      { error: 'La contraseña debe tener al menos 8 caracteres.' },
-      { status: 400 },
-    );
-  }
+  const { username, email, password } = parsed.data;
 
   const { data: existingEmail } = await supabaseServer
     .from('users')
@@ -57,29 +40,50 @@ export async function POST(request: Request) {
     );
   }
 
-  const passwordHash = await hashPassword(password);
+  const supabaseAuth = createSupabaseAuthClient();
+  if (!supabaseAuth) {
+    return safeErrorResponse(null, 'Auth no configurado.');
+  }
+
+  const requestOrigin = new URL(request.url).origin;
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || requestOrigin;
+  const { data: signUpData, error: signUpError } = await supabaseAuth.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { username },
+      emailRedirectTo: `${siteUrl.replace(/\/$/, '')}/map`,
+    },
+  });
+
+  if (signUpError || !signUpData.user) {
+    return NextResponse.json(
+      { error: 'No se pudo crear la cuenta.' },
+      { status: signUpError?.status ?? 500 },
+    );
+  }
+
   const { data: created, error } = await supabaseServer
     .from('users')
-    .insert({ username, email, role: 'citizen', password_hash: passwordHash })
+    .insert({
+      id: signUpData.user.id,
+      username,
+      email,
+      role: 'citizen',
+      password_hash: null,
+      email_verified_at: signUpData.user.email_confirmed_at ?? null,
+      auth_provider: 'supabase',
+    })
     .select('id, username, email, role, avatar_key, created_at')
     .single();
 
   if (error || !created) {
-    return NextResponse.json(
-      { error: error?.message ?? 'No se pudo crear la cuenta.' },
-      { status: 500 },
-    );
+    return safeErrorResponse(error, 'No se pudo crear el perfil.');
   }
 
-  const session = await createSession(created.id);
-  const response = NextResponse.json({ user: created });
-  response.cookies.set(getSessionCookieName(), session.token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: session.maxAge,
+  return NextResponse.json({
+    user: null,
+    needs_email_verification: true,
+    email: created.email,
   });
-
-  return response;
 }
