@@ -15,6 +15,7 @@ import {
   photoCandidates,
   resolveStartReport,
 } from '../../lib/photo-navigation';
+import { buildReportStaticMapUrl } from '../../lib/mapbox-static';
 import { CITY_ZONES, resolveZoneByCoordinates } from '../../lib/zones';
 
 const issueTypes = REPORT_CATEGORIES.map((category) => ({
@@ -606,6 +607,7 @@ export default function MapClient() {
     string[]
   >([]);
   const [photoViewerCurrentIndex, setPhotoViewerCurrentIndex] = useState(0);
+  const [photoViewerDetailsOpen, setPhotoViewerDetailsOpen] = useState(false);
   const photoViewerPanelRef = useRef<HTMLDivElement | null>(null);
   const [lastCreatedId, setLastCreatedId] = useState<string | null>(null);
   const [showFollow, setShowFollow] = useState(false);
@@ -743,6 +745,7 @@ export default function MapClient() {
     setPhotoViewerOpen(false);
     setPhotoViewerOrderedReportIds([]);
     setPhotoViewerCurrentIndex(0);
+    setPhotoViewerDetailsOpen(false);
   }
 
   function removeReportFromPhotoViewer(reportId: string) {
@@ -758,6 +761,7 @@ export default function MapClient() {
       });
       if (next.length === 0) {
         setPhotoViewerOpen(false);
+        setPhotoViewerDetailsOpen(false);
       }
       return next;
     });
@@ -1126,10 +1130,28 @@ export default function MapClient() {
     reportMap,
   ]);
 
+  const photoViewerStaticMapUrl = useMemo(() => {
+    if (!photoViewerCurrentReport) return null;
+    return buildReportStaticMapUrl({
+      lat: photoViewerCurrentReport.lat,
+      lng: photoViewerCurrentReport.lng,
+      token: MAPBOX_ACCESS_TOKEN,
+      width: 220,
+      height: 148,
+      zoom: 15,
+    });
+  }, [photoViewerCurrentReport]);
+
+  const photoViewerLocationLabel = useMemo(() => {
+    if (!photoViewerCurrentReport) return '';
+    if (photoViewerCurrentReport.zone_name) return photoViewerCurrentReport.zone_name;
+    return `${photoViewerCurrentReport.lat.toFixed(4)}, ${photoViewerCurrentReport.lng.toFixed(4)}`;
+  }, [photoViewerCurrentReport]);
+
   useEffect(() => {
     if (!photoViewerOpen) return;
     if (photoViewerCurrentReport) return;
-    setPhotoViewerOpen(false);
+    closePhotoViewer();
   }, [photoViewerCurrentReport, photoViewerOpen]);
 
   function openViewerFromReport(report: ReportRecord) {
@@ -1148,7 +1170,14 @@ export default function MapClient() {
     const startIndex = orderedIds.findIndex((id) => id === start.id);
     setPhotoViewerOrderedReportIds(orderedIds);
     setPhotoViewerCurrentIndex(startIndex >= 0 ? startIndex : 0);
+    setPhotoViewerDetailsOpen(false);
     setPhotoViewerOpen(true);
+  }
+
+  function openReportOnMainMap() {
+    if (!photoViewerCurrentReport) return;
+    centerMapOnReport(photoViewerCurrentReport);
+    closePhotoViewer();
   }
 
   function stepPhotoViewer(direction: -1 | 1) {
@@ -1199,7 +1228,7 @@ export default function MapClient() {
   useEffect(() => {
     const panelHost = photoViewerPanelRef.current;
     if (!panelHost) return;
-    if (!photoViewerOpen || !photoViewerCurrentReport) {
+    if (!photoViewerOpen || !photoViewerCurrentReport || !photoViewerDetailsOpen) {
       panelHost.innerHTML = '';
       return;
     }
@@ -1215,6 +1244,7 @@ export default function MapClient() {
     currentUser?.id,
     lastCreatedId,
     photoViewerCurrentReport,
+    photoViewerDetailsOpen,
     photoViewerOpen,
     reportList,
   ]);
@@ -1658,9 +1688,9 @@ export default function MapClient() {
     wrapper.style.display = 'grid';
     wrapper.style.gap = '8px';
     if (!isPopupMode) {
-      wrapper.style.maxHeight = '55vh';
-      wrapper.style.overflowY = 'auto';
-      wrapper.style.paddingRight = '4px';
+      wrapper.style.maxHeight = 'none';
+      wrapper.style.overflow = 'visible';
+      wrapper.style.paddingRight = '0';
     }
 
     const header = document.createElement('div');
@@ -2740,34 +2770,98 @@ export default function MapClient() {
       </div>
 
       {photoViewerOpen && photoViewerCurrentReport && (
-        <div className="fixed inset-0 z-50 bg-slate-950/92 text-white">
+        <div className="fixed inset-0 z-50 text-white">
+          <div className="absolute inset-0 bg-slate-950/55 backdrop-blur-md" />
+
+          <section className="relative h-full w-full overflow-hidden">
+            <img
+              alt={`${photoViewerCurrentReport.category ?? 'Reporte'} · ${
+                photoViewerCurrentReport.subcategory ??
+                photoViewerCurrentReport.type
+              }`}
+              className="h-full w-full select-none object-contain"
+              draggable={false}
+              src={photoViewerCurrentReport.photo_url ?? ''}
+            />
+          </section>
+
+          <div className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center px-4">
+            <p className="rounded-full bg-black/55 px-3 py-1 text-xs font-semibold">
+              {photoViewerCurrentIndex + 1} / {photoViewerTotal}
+            </p>
+          </div>
+
+          <button
+            aria-label="Abrir detalles"
+            className="absolute left-4 top-4 z-20 rounded-full bg-black/55 px-4 py-2 text-xs font-semibold text-white"
+            onClick={() => setPhotoViewerDetailsOpen((prev) => !prev)}
+            type="button"
+          >
+            {photoViewerDetailsOpen ? 'Ocultar detalles' : 'Detalles'}
+          </button>
+
           <button
             aria-label="Cerrar visor"
-            className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-black/45 text-2xl text-white"
+            className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-2xl text-white"
             onClick={closePhotoViewer}
             type="button"
           >
             ×
           </button>
 
-          <div className="flex h-full w-full flex-col lg:flex-row">
-            <section className="relative flex-1 overflow-hidden">
-              <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-full bg-black/45 px-3 py-1 text-xs font-semibold">
-                {photoViewerCurrentIndex + 1} / {photoViewerTotal}
+          {photoViewerDetailsOpen && (
+            <aside className="absolute left-4 top-16 z-20 w-[min(92vw,360px)] max-h-[62vh] overflow-hidden rounded-2xl border border-slate-200 bg-white/95 p-3 text-slate-900 shadow-[0_16px_28px_rgba(15,23,42,0.35)] backdrop-blur-sm">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  Detalle del reporte
+                </p>
+                <button
+                  className="rounded-full border border-slate-300 px-2 py-1 text-[10px] font-semibold text-slate-600"
+                  onClick={() => setPhotoViewerDetailsOpen(false)}
+                  type="button"
+                >
+                  Cerrar
+                </button>
               </div>
-
-              <img
-                alt={`${photoViewerCurrentReport.category ?? 'Reporte'} · ${
-                  photoViewerCurrentReport.subcategory ??
-                  photoViewerCurrentReport.type
-                }`}
-                className="h-full w-full object-contain"
-                src={photoViewerCurrentReport.photo_url ?? ''}
+              <div
+                className="max-h-[calc(62vh-48px)] overflow-y-auto pr-1"
+                ref={photoViewerPanelRef}
               />
+            </aside>
+          )}
 
+          <button
+            className="absolute bottom-6 left-4 z-20 w-44 overflow-hidden rounded-2xl border border-white/20 bg-black/65 p-1 text-left shadow-[0_12px_24px_rgba(15,23,42,0.35)]"
+            onClick={openReportOnMainMap}
+            type="button"
+          >
+            {photoViewerStaticMapUrl ? (
+              <img
+                alt={`Mapa de referencia ${photoViewerLocationLabel}`}
+                className="h-28 w-full rounded-xl object-cover"
+                src={photoViewerStaticMapUrl}
+              />
+            ) : (
+              <div className="flex h-28 w-full items-center justify-center rounded-xl bg-slate-700 text-xs text-slate-100">
+                Mapa no disponible
+              </div>
+            )}
+            <div className="px-2 pb-1 pt-1">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-200">
+                Referencia
+              </p>
+              <p className="truncate text-xs font-semibold text-white">
+                {photoViewerLocationLabel}
+              </p>
+              <p className="text-[10px] text-slate-300">Abrir en mapa</p>
+            </div>
+          </button>
+
+          <div className="absolute inset-x-0 bottom-6 z-20 flex justify-center">
+            <div className="flex items-center gap-5 rounded-full bg-black/60 px-4 py-2 shadow-[0_8px_20px_rgba(15,23,42,0.45)]">
               <button
                 aria-label="Foto anterior"
-                className="absolute left-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-2xl text-white disabled:cursor-not-allowed disabled:opacity-30"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-3xl text-white disabled:cursor-not-allowed disabled:opacity-35"
                 disabled={!canGoPrevPhoto}
                 onClick={() => stepPhotoViewer(-1)}
                 type="button"
@@ -2776,33 +2870,14 @@ export default function MapClient() {
               </button>
               <button
                 aria-label="Foto siguiente"
-                className="absolute right-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-2xl text-white disabled:cursor-not-allowed disabled:opacity-30"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-3xl text-white disabled:cursor-not-allowed disabled:opacity-35"
                 disabled={!canGoNextPhoto}
                 onClick={() => stepPhotoViewer(1)}
                 type="button"
               >
                 ›
               </button>
-            </section>
-
-            <aside className="h-[44vh] w-full overflow-hidden border-t border-white/10 bg-white p-4 text-slate-900 lg:h-full lg:w-[390px] lg:border-l lg:border-t-0">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Detalle del reporte
-                </p>
-                <button
-                  className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700"
-                  onClick={closePhotoViewer}
-                  type="button"
-                >
-                  Cerrar
-                </button>
-              </div>
-              <div
-                className="h-[calc(44vh-56px)] overflow-y-auto pr-1 lg:h-[calc(100vh-56px)]"
-                ref={photoViewerPanelRef}
-              />
-            </aside>
+            </div>
           </div>
         </div>
       )}
