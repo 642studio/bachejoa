@@ -9,6 +9,12 @@ import {
   REPORT_STATUS_STAGES,
   type ReportStatus,
 } from '../../lib/reporting';
+import {
+  buildNearestPath,
+  hasRenderablePhoto,
+  photoCandidates,
+  resolveStartReport,
+} from '../../lib/photo-navigation';
 import { CITY_ZONES, resolveZoneByCoordinates } from '../../lib/zones';
 
 const issueTypes = REPORT_CATEGORIES.map((category) => ({
@@ -369,6 +375,8 @@ type PinStageFilter =
   | 'Verificado (con foto)'
   | 'Reparado';
 
+type InfoContentMode = 'popup' | 'viewer';
+
 function createGlowIcon(
   type: { name: string; icon: string | null },
   color: string,
@@ -593,6 +601,12 @@ export default function MapClient() {
   const [shareTitle, setShareTitle] = useState('');
   const [shareReport, setShareReport] = useState<ReportRecord | null>(null);
   const [shareMode, setShareMode] = useState<'new' | 'existing'>('new');
+  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
+  const [photoViewerOrderedReportIds, setPhotoViewerOrderedReportIds] = useState<
+    string[]
+  >([]);
+  const [photoViewerCurrentIndex, setPhotoViewerCurrentIndex] = useState(0);
+  const photoViewerPanelRef = useRef<HTMLDivElement | null>(null);
   const [lastCreatedId, setLastCreatedId] = useState<string | null>(null);
   const [showFollow, setShowFollow] = useState(false);
   const [dontShowFollow, setDontShowFollow] = useState(false);
@@ -642,6 +656,124 @@ export default function MapClient() {
     if (!currentUser) return false;
     return currentUser.role === 'admin';
   }, [currentUser]);
+
+  function getMarkerByReportId(reportId: string) {
+    return savedMarkersRef.current.find((marker) => marker.reportId === reportId) ?? null;
+  }
+
+  function getReportByReportId(reportId: string) {
+    return reportList.find((report) => report.id === reportId) ?? null;
+  }
+
+  function buildMarkerVisualForReport(
+    report: ReportRecord,
+    detailedOverride?: boolean,
+  ): MarkerVisual {
+    const normalized = normalizeReport(report);
+    const detailed =
+      typeof detailedOverride === 'boolean' ? detailedOverride : showDetailedPins;
+    const isRepaired = normalized.status === 'Reparado' || normalized.repaired;
+    const color = resolveTypeColor(normalized.type, normalized.category);
+    if (isRepaired) {
+      return detailed ? createRepairedIcon() : createDotIcon('#22c55e');
+    }
+    if (detailed) {
+      const type = resolveTypeIcon(normalized.type);
+      return type.icon
+        ? createMarkerIcon({ name: type.name, icon: type.icon })
+        : createDotIcon(color);
+    }
+    return createDotIcon(color);
+  }
+
+  function syncMarkerForReport(
+    marker: ReportMarkerHandle | null,
+    report: ReportRecord,
+    detailedOverride?: boolean,
+  ) {
+    if (!marker) return;
+    const normalized = normalizeReport(report);
+    marker.reportData = normalized;
+    marker.setIcon(buildMarkerVisualForReport(normalized, detailedOverride));
+  }
+
+  function syncReportUpdate(
+    updatedRaw: ReportRecord,
+    options?: {
+      marker?: ReportMarkerHandle | null;
+      refreshPopup?: boolean;
+    },
+  ) {
+    const normalized = normalizeReport(updatedRaw);
+    setReportList((prev) =>
+      prev.map((item) => (item.id === normalized.id ? normalized : item)),
+    );
+
+    const marker = options?.marker ?? getMarkerByReportId(normalized.id);
+    syncMarkerForReport(marker, normalized);
+
+    if (options?.refreshPopup && marker) {
+      refreshInfoContent(normalized, marker);
+    }
+
+    return normalized;
+  }
+
+  function syncAngryCount(reportId: string, angryCount: number) {
+    setReportList((prev) =>
+      prev.map((item) =>
+        item.id === reportId
+          ? {
+              ...item,
+              angry_count: angryCount,
+            }
+          : item,
+      ),
+    );
+
+    const marker = getMarkerByReportId(reportId);
+    if (!marker) return;
+    marker.reportData = {
+      ...marker.reportData,
+      angry_count: angryCount,
+    };
+  }
+
+  function closePhotoViewer() {
+    setPhotoViewerOpen(false);
+    setPhotoViewerOrderedReportIds([]);
+    setPhotoViewerCurrentIndex(0);
+  }
+
+  function removeReportFromPhotoViewer(reportId: string) {
+    setPhotoViewerOrderedReportIds((prev) => {
+      const removedIndex = prev.indexOf(reportId);
+      if (removedIndex === -1) return prev;
+      const next = prev.filter((id) => id !== reportId);
+      setPhotoViewerCurrentIndex((current) => {
+        if (next.length === 0) return 0;
+        if (current > removedIndex) return current - 1;
+        if (current >= next.length) return next.length - 1;
+        return current;
+      });
+      if (next.length === 0) {
+        setPhotoViewerOpen(false);
+      }
+      return next;
+    });
+  }
+
+  function centerMapOnReport(report: ReportRecord) {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const currentZoom = map.getZoom() ?? 0;
+    map.flyTo({
+      center: [report.lng, report.lat],
+      zoom: Math.max(currentZoom, 16),
+      duration: 380,
+      essential: true,
+    });
+  }
 
   function clearClusterMarkers() {
     clusterMarkersRef.current.forEach((marker) => marker.setMap(null));
@@ -964,6 +1096,129 @@ export default function MapClient() {
     );
   }, [selectedCategoryFilter]);
 
+  const normalizedFilteredReports = useMemo(
+    () => filteredReports.map((report) => normalizeReport(report)),
+    [filteredReports],
+  );
+
+  const filteredPhotoReports = useMemo(
+    () => photoCandidates(normalizedFilteredReports),
+    [normalizedFilteredReports],
+  );
+
+  const reportMap = useMemo(() => {
+    const map = new Map<string, ReportRecord>();
+    reportList.forEach((report) => map.set(report.id, report));
+    return map;
+  }, [reportList]);
+
+  const photoViewerCurrentReport = useMemo(() => {
+    if (!photoViewerOpen || photoViewerOrderedReportIds.length === 0) return null;
+    const currentId = photoViewerOrderedReportIds[photoViewerCurrentIndex];
+    if (!currentId) return null;
+    const report = reportMap.get(currentId);
+    if (!report) return null;
+    return normalizeReport(report);
+  }, [
+    photoViewerCurrentIndex,
+    photoViewerOpen,
+    photoViewerOrderedReportIds,
+    reportMap,
+  ]);
+
+  useEffect(() => {
+    if (!photoViewerOpen) return;
+    if (photoViewerCurrentReport) return;
+    setPhotoViewerOpen(false);
+  }, [photoViewerCurrentReport, photoViewerOpen]);
+
+  function openViewerFromReport(report: ReportRecord) {
+    const normalizedClicked = normalizeReport(report);
+    const start = resolveStartReport(normalizedClicked, filteredPhotoReports);
+    if (!start) {
+      alert('No hay fotos disponibles en los reportes filtrados.');
+      return;
+    }
+    const path = buildNearestPath(start, filteredPhotoReports);
+    if (!path.length) {
+      alert('No hay fotos disponibles en los reportes filtrados.');
+      return;
+    }
+    const orderedIds = path.map((item) => item.id);
+    const startIndex = orderedIds.findIndex((id) => id === start.id);
+    setPhotoViewerOrderedReportIds(orderedIds);
+    setPhotoViewerCurrentIndex(startIndex >= 0 ? startIndex : 0);
+    setPhotoViewerOpen(true);
+  }
+
+  function stepPhotoViewer(direction: -1 | 1) {
+    setPhotoViewerCurrentIndex((prev) => {
+      const next = prev + direction;
+      if (next < 0) return prev;
+      if (next >= photoViewerOrderedReportIds.length) return prev;
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    if (!photoViewerOpen || !photoViewerCurrentReport) return;
+    centerMapOnReport(photoViewerCurrentReport);
+  }, [photoViewerCurrentReport, photoViewerOpen]);
+
+  useEffect(() => {
+    if (!photoViewerOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [photoViewerOpen]);
+
+  useEffect(() => {
+    if (!photoViewerOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closePhotoViewer();
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        stepPhotoViewer(1);
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        stepPhotoViewer(-1);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [photoViewerOpen, photoViewerOrderedReportIds]);
+
+  useEffect(() => {
+    const panelHost = photoViewerPanelRef.current;
+    if (!panelHost) return;
+    if (!photoViewerOpen || !photoViewerCurrentReport) {
+      panelHost.innerHTML = '';
+      return;
+    }
+    const marker = getMarkerByReportId(photoViewerCurrentReport.id);
+    const content = buildInfoContent(photoViewerCurrentReport, marker, 'viewer');
+    panelHost.innerHTML = '';
+    panelHost.appendChild(content);
+    return () => {
+      panelHost.innerHTML = '';
+    };
+  }, [
+    canModerateReports,
+    currentUser?.id,
+    lastCreatedId,
+    photoViewerCurrentReport,
+    photoViewerOpen,
+    reportList,
+  ]);
+
   useEffect(() => {
     if (!MAPBOX_ACCESS_TOKEN || !mapRef.current) return;
     if (!mapboxgl.supported()) {
@@ -1026,20 +1281,7 @@ export default function MapClient() {
       savedMarkersRef.current.forEach((marker) => {
         const report: ReportRecord | undefined = marker.reportData;
         if (!report) return;
-        if (report.status === 'Reparado' || report.repaired) {
-          marker.setIcon(detailed ? createRepairedIcon() : createDotIcon('#22c55e'));
-          return;
-        }
-        if (detailed) {
-          const type = resolveTypeIcon(report.type);
-          marker.setIcon(
-            type.icon
-              ? createMarkerIcon({ name: type.name, icon: type.icon })
-              : createDotIcon(resolveTypeColor(report.type, report.category)),
-          );
-        } else {
-          marker.setIcon(createDotIcon(resolveTypeColor(report.type, report.category)));
-        }
+        syncMarkerForReport(marker, report, detailed);
       });
       refreshClusterOverlay();
     };
@@ -1350,6 +1592,10 @@ export default function MapClient() {
     reportId: string,
     countEl: HTMLSpanElement,
     buttonEl: HTMLButtonElement,
+    options?: {
+      refreshPopup?: boolean;
+      marker?: ReportMarkerHandle | null;
+    },
   ) {
     if (hasVoted(reportId)) return;
     try {
@@ -1358,7 +1604,15 @@ export default function MapClient() {
       });
       if (!res.ok) return;
       const data = (await res.json()) as { angry_count: number };
-      countEl.textContent = String(data.angry_count ?? 0);
+      const nextCount = Number(data.angry_count ?? 0);
+      countEl.textContent = String(nextCount);
+      syncAngryCount(reportId, nextCount);
+      if (options?.refreshPopup) {
+        const marker = options.marker ?? getMarkerByReportId(reportId);
+        if (marker) {
+          refreshInfoContent(marker.reportData, marker);
+        }
+      }
       markVoted(reportId);
       buttonEl.disabled = true;
       buttonEl.style.opacity = '0.6';
@@ -1377,7 +1631,12 @@ export default function MapClient() {
       .addTo(mapInstanceRef.current);
   }
 
-  function buildInfoContent(report: ReportRecord, marker: ReportMarkerHandle) {
+  function buildInfoContent(
+    report: ReportRecord,
+    marker: ReportMarkerHandle | null,
+    mode: InfoContentMode = 'popup',
+  ) {
+    const isPopupMode = mode === 'popup';
     const loggedInUser = currentUserRef.current;
     const canModerate = canModerateRef.current;
     const normalizedReport = normalizeReport(report);
@@ -1394,10 +1653,15 @@ export default function MapClient() {
       repair_rating_count: ratingCount,
     } = normalizedReport;
     const wrapper = document.createElement('div');
-    wrapper.style.maxWidth = '240px';
+    wrapper.style.maxWidth = isPopupMode ? '240px' : '100%';
     wrapper.style.fontFamily = 'inherit';
     wrapper.style.display = 'grid';
     wrapper.style.gap = '8px';
+    if (!isPopupMode) {
+      wrapper.style.maxHeight = '55vh';
+      wrapper.style.overflowY = 'auto';
+      wrapper.style.paddingRight = '4px';
+    }
 
     const header = document.createElement('div');
     header.style.display = 'flex';
@@ -1487,11 +1751,10 @@ export default function MapClient() {
             return;
           }
           const updatedRaw = (await res.json()) as ReportRecord;
-          const updated = normalizeReport(updatedRaw);
-          setReportList((prev) =>
-            prev.map((item) => (item.id === reportId ? updated : item)),
-          );
-          refreshInfoContent(updated, marker);
+          syncReportUpdate(updatedRaw, {
+            marker,
+            refreshPopup: isPopupMode,
+          });
         } finally {
           statusSelect.disabled = false;
         }
@@ -1586,23 +1849,11 @@ export default function MapClient() {
             alert(payload.error ?? 'No se pudo cambiar el tipo.');
             return;
           }
-          const updated = normalizeReport((await res.json()) as ReportRecord);
-          marker.reportData = updated;
-          const iconType = resolveTypeIcon(updated.type);
-          const isRepaired = updated.status === 'Reparado' || updated.repaired;
-          if (isRepaired) {
-            marker.setIcon(showDetailedPins ? createRepairedIcon() : createDotIcon('#22c55e'));
-          } else if (showDetailedPins && iconType.icon) {
-            marker.setIcon(createMarkerIcon({ name: iconType.name, icon: iconType.icon }));
-          } else {
-            marker.setIcon(
-              createDotIcon(resolveTypeColor(updated.type, updated.category)),
-            );
-          }
-          setReportList((prev) =>
-            prev.map((item) => (item.id === reportId ? updated : item)),
-          );
-          refreshInfoContent(updated, marker);
+          const updated = (await res.json()) as ReportRecord;
+          syncReportUpdate(updated, {
+            marker,
+            refreshPopup: isPopupMode,
+          });
         } finally {
           saveTypeButton.disabled = false;
         }
@@ -1679,7 +1930,10 @@ export default function MapClient() {
       reaction.appendChild(left);
       reaction.appendChild(right);
       reaction.addEventListener('click', () =>
-        incrementAngryCount(reportId, count, reaction),
+        incrementAngryCount(reportId, count, reaction, {
+          marker,
+          refreshPopup: isPopupMode,
+        }),
       );
       if (hasVoted(reportId)) {
         reaction.disabled = true;
@@ -1715,12 +1969,11 @@ export default function MapClient() {
               alert(payload.error ?? 'No se pudo actualizar el reporte.');
               return;
             }
-            const updated = normalizeReport((await res.json()) as ReportRecord);
-            marker.setIcon(createRepairedIcon());
-            setReportList((prev) =>
-              prev.map((item) => (item.id === reportId ? updated : item)),
-            );
-            refreshInfoContent(updated, marker);
+            const updated = (await res.json()) as ReportRecord;
+            syncReportUpdate(updated, {
+              marker,
+              refreshPopup: isPopupMode,
+            });
           } finally {
             repairButton.disabled = false;
           }
@@ -1770,16 +2023,20 @@ export default function MapClient() {
         summary.textContent = `Promedio: ${(
           Number(data.repair_rating_avg ?? 0) || 0
         ).toFixed(1)} (${data.repair_rating_count ?? 0} votos)`;
-        setReportList((prev) =>
-          prev.map((item) =>
-            item.id === reportId
-              ? {
-                  ...item,
-                  repair_rating_avg: data.repair_rating_avg,
-                  repair_rating_count: data.repair_rating_count,
-                }
-              : item,
-          ),
+        const base =
+          getReportByReportId(reportId) ??
+          marker?.reportData ??
+          normalizedReport;
+        syncReportUpdate(
+          {
+            ...base,
+            repair_rating_avg: data.repair_rating_avg,
+            repair_rating_count: data.repair_rating_count,
+          },
+          {
+            marker,
+            refreshPopup: isPopupMode,
+          },
         );
       };
 
@@ -1825,17 +2082,11 @@ export default function MapClient() {
             alert(payload.error ?? 'No se pudo actualizar el reporte.');
             return;
           }
-          const updated = normalizeReport((await res.json()) as ReportRecord);
-          const iconType = resolveTypeIcon(updated.type);
-          marker.setIcon(
-            iconType.icon
-              ? createMarkerIcon({ name: iconType.name, icon: iconType.icon })
-              : createDotIcon(resolveTypeColor(updated.type, updated.category)),
-          );
-          setReportList((prev) =>
-            prev.map((item) => (item.id === reportId ? updated : item)),
-          );
-          refreshInfoContent(updated, marker);
+          const updated = (await res.json()) as ReportRecord;
+          syncReportUpdate(updated, {
+            marker,
+            refreshPopup: isPopupMode,
+          });
         } finally {
           undoButton.disabled = false;
         }
@@ -1952,12 +2203,11 @@ export default function MapClient() {
               alert(payload.error ?? 'No se pudo guardar la foto.');
               return;
             }
-            const updated = normalizeReport((await saveRes.json()) as ReportRecord);
-            marker.reportData = updated;
-            setReportList((prev) =>
-              prev.map((item) => (item.id === reportId ? updated : item)),
-            );
-            refreshInfoContent(updated, marker);
+            const updated = (await saveRes.json()) as ReportRecord;
+            syncReportUpdate(updated, {
+              marker,
+              refreshPopup: isPopupMode,
+            });
             void evaluateProgressNotice();
           } finally {
             addPhotoButton.disabled = false;
@@ -1971,21 +2221,38 @@ export default function MapClient() {
       wrapper.appendChild(photoAction);
     }
 
-    if (photoUrl) {
-      const img = document.createElement('img');
-      img.src = photoUrl;
-      img.alt = `Reporte ${type}`;
-      img.style.width = '100%';
-      img.style.borderRadius = '12px';
-      img.style.objectFit = 'cover';
-      img.style.maxHeight = '140px';
-      wrapper.appendChild(img);
-    } else {
-      const empty = document.createElement('div');
-      empty.textContent = 'Sin foto';
-      empty.style.fontSize = '12px';
-      empty.style.color = '#94a3b8';
-      wrapper.appendChild(empty);
+    if (isPopupMode) {
+      if (hasRenderablePhoto(photoUrl)) {
+        const img = document.createElement('img');
+        img.src = photoUrl ?? '';
+        img.alt = `Reporte ${type}`;
+        img.style.width = '100%';
+        img.style.borderRadius = '12px';
+        img.style.objectFit = 'cover';
+        img.style.maxHeight = '140px';
+        img.style.cursor = 'zoom-in';
+        img.addEventListener('click', () => {
+          openViewerFromReport(normalizedReport);
+        });
+        wrapper.appendChild(img);
+      } else {
+        const nearestButton = document.createElement('button');
+        nearestButton.type = 'button';
+        nearestButton.textContent = 'Ver foto más cercana';
+        nearestButton.style.width = '100%';
+        nearestButton.style.padding = '8px 12px';
+        nearestButton.style.borderRadius = '12px';
+        nearestButton.style.border = '1px dashed #94a3b8';
+        nearestButton.style.background = '#f8fafc';
+        nearestButton.style.color = '#334155';
+        nearestButton.style.fontSize = '12px';
+        nearestButton.style.fontWeight = '600';
+        nearestButton.style.cursor = 'pointer';
+        nearestButton.addEventListener('click', () => {
+          openViewerFromReport(normalizedReport);
+        });
+        wrapper.appendChild(nearestButton);
+      }
     }
 
     return wrapper;
@@ -2004,18 +2271,7 @@ export default function MapClient() {
   function addReportMarker(report: ReportRecord) {
     if (!mapInstanceRef.current) return;
     const normalized = normalizeReport(report);
-    const type = resolveTypeIcon(normalized.type);
-    const isRepaired = normalized.status === 'Reparado' || normalized.repaired;
-    const color = resolveTypeColor(normalized.type, normalized.category);
-    const icon = isRepaired
-      ? showDetailedPins
-        ? createRepairedIcon()
-        : createDotIcon('#22c55e')
-      : showDetailedPins
-        ? type.icon
-          ? createMarkerIcon({ name: type.name, icon: type.icon })
-          : createDotIcon(color)
-        : createDotIcon(color);
+    const icon = buildMarkerVisualForReport(normalized);
 
     const markerBase = createMarkerHandle({
       map: mapInstanceRef.current,
@@ -2064,6 +2320,7 @@ export default function MapClient() {
       }
       refreshClusterOverlay();
       setReportList((prev) => prev.filter((report) => report.id !== reportId));
+      removeReportFromPhotoViewer(reportId);
       if (lastCreatedId === reportId) {
         setLastCreatedId(null);
       }
@@ -2198,6 +2455,10 @@ export default function MapClient() {
       setIsUpdatingAvatar(false);
     }
   }
+
+  const photoViewerTotal = photoViewerOrderedReportIds.length;
+  const canGoPrevPhoto = photoViewerCurrentIndex > 0;
+  const canGoNextPhoto = photoViewerCurrentIndex < photoViewerTotal - 1;
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900">
@@ -2477,6 +2738,74 @@ export default function MapClient() {
           </div>
         </div>
       </div>
+
+      {photoViewerOpen && photoViewerCurrentReport && (
+        <div className="fixed inset-0 z-50 bg-slate-950/92 text-white">
+          <button
+            aria-label="Cerrar visor"
+            className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-black/45 text-2xl text-white"
+            onClick={closePhotoViewer}
+            type="button"
+          >
+            ×
+          </button>
+
+          <div className="flex h-full w-full flex-col lg:flex-row">
+            <section className="relative flex-1 overflow-hidden">
+              <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-full bg-black/45 px-3 py-1 text-xs font-semibold">
+                {photoViewerCurrentIndex + 1} / {photoViewerTotal}
+              </div>
+
+              <img
+                alt={`${photoViewerCurrentReport.category ?? 'Reporte'} · ${
+                  photoViewerCurrentReport.subcategory ??
+                  photoViewerCurrentReport.type
+                }`}
+                className="h-full w-full object-contain"
+                src={photoViewerCurrentReport.photo_url ?? ''}
+              />
+
+              <button
+                aria-label="Foto anterior"
+                className="absolute left-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-2xl text-white disabled:cursor-not-allowed disabled:opacity-30"
+                disabled={!canGoPrevPhoto}
+                onClick={() => stepPhotoViewer(-1)}
+                type="button"
+              >
+                ‹
+              </button>
+              <button
+                aria-label="Foto siguiente"
+                className="absolute right-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-2xl text-white disabled:cursor-not-allowed disabled:opacity-30"
+                disabled={!canGoNextPhoto}
+                onClick={() => stepPhotoViewer(1)}
+                type="button"
+              >
+                ›
+              </button>
+            </section>
+
+            <aside className="h-[44vh] w-full overflow-hidden border-t border-white/10 bg-white p-4 text-slate-900 lg:h-full lg:w-[390px] lg:border-l lg:border-t-0">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Detalle del reporte
+                </p>
+                <button
+                  className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700"
+                  onClick={closePhotoViewer}
+                  type="button"
+                >
+                  Cerrar
+                </button>
+              </div>
+              <div
+                className="h-[calc(44vh-56px)] overflow-y-auto pr-1 lg:h-[calc(100vh-56px)]"
+                ref={photoViewerPanelRef}
+              />
+            </aside>
+          </div>
+        </div>
+      )}
 
       {showGuide && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/30 px-4 pb-6 sm:pb-10">
